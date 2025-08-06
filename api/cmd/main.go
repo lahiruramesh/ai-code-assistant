@@ -1,9 +1,9 @@
 package main
 
 import (
-	"agent/agents"
-	"agent/docker"
-	"agent/llm"
+	"agent/internal/pkg/agents"
+	"agent/internal/pkg/docker"
+	"agent/internal/pkg/llm"
 	"bufio"
 	"fmt"
 	"log"

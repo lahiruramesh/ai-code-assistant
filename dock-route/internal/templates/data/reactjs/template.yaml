@@ -1,0 +1,9 @@
+name: "React.js"
+description: "React.js single page application"
+port: "3000"
+mount_path: "/app"
+environment:
+  NODE_ENV: "development"
+  PORT: "3000"
+build_args:
+  NODE_VERSION: "18"
