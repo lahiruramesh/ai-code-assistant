@@ -92,7 +92,8 @@ func NewAgent(agentType AgentType, client *api.Client, llmService *llm.LLMServic
 	}
 
 	// Determine if this agent should use tool calling
-	useToolCalling := agentType == CodeEditingAgent
+	// All agents should have access to tools for their specialized tasks
+	useToolCalling := true // Enable tool calling for all agents
 
 	// Convert context to map for compatibility
 	contextMap := make(map[string]interface{})
@@ -173,6 +174,7 @@ func (a *Agent) processMessage(msg AgentMessage) {
 
 	// For supervisor agent, parse delegation instructions
 	if a.Type == SupervisorAgent {
+		log.Printf("[%s] Parsing delegation from response length: %d", a.Type, len(response))
 		a.parseDelegation(response, msg)
 	}
 
@@ -232,15 +234,34 @@ func (a *Agent) generateResponse(msg AgentMessage) (string, error) {
 			toolResults := make([]string, 0, len(response.ToolCalls))
 
 			for i, toolCall := range response.ToolCalls {
+				log.Printf("[%s] ===== TOOL CALL %d START =====", a.Type, i+1)
+				log.Printf("[%s] Tool Name: %s", a.Type, toolCall.Function.Name)
+				
+				// Log input parameters - convert arguments to JSON for logging
+				if len(toolCall.Function.Arguments) > 0 {
+					argsJSON, err := json.Marshal(toolCall.Function.Arguments)
+					if err != nil {
+						log.Printf("[%s] Tool Input Parameters: (failed to marshal: %v)", a.Type, err)
+					} else {
+						log.Printf("[%s] Tool Input Parameters: %s", a.Type, string(argsJSON))
+					}
+				} else {
+					log.Printf("[%s] Tool Input Parameters: (none)", a.Type)
+				}
+				
 				log.Printf("[%s] Executing tool call %d: %s", a.Type, i+1, toolCall.Function.Name)
 				result, err := tools.ExecuteToolCall(toolCall)
+				
 				if err != nil {
-					log.Printf("[%s] Tool call %d failed: %v", a.Type, i+1, err)
+					log.Printf("[%s] Tool call %d FAILED: %v", a.Type, i+1, err)
+					log.Printf("[%s] Tool Error Details: %v", a.Type, err)
 					toolResults = append(toolResults, fmt.Sprintf("Tool %s failed: %v", toolCall.Function.Name, err))
 				} else {
-					log.Printf("[%s] Tool call %d succeeded", a.Type, i+1)
+					log.Printf("[%s] Tool call %d SUCCEEDED", a.Type, i+1)
+					log.Printf("[%s] Tool Response: %s", a.Type, result)
 					toolResults = append(toolResults, fmt.Sprintf("Tool %s result: %s", toolCall.Function.Name, result))
 				}
+				log.Printf("[%s] ===== TOOL CALL %d END =====", a.Type, i+1)
 			}
 
 			// Combine the text response with tool results
@@ -329,22 +350,83 @@ func loadSystemPrompt(agentType AgentType) (string, error) {
 
 // parseDelegation parses delegation instructions from supervisor response
 func (a *Agent) parseDelegation(response string, originalMsg AgentMessage) {
+	log.Printf("[%s] Starting delegation parsing for response", a.Type)
 	lines := strings.Split(response, "\n")
 
 	var delegateToAgent string
 	var task string
 	var instructions string
 
-	for _, line := range lines {
+	for i, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "DELEGATE_TO:") {
-			delegateToAgent = strings.TrimSpace(strings.TrimPrefix(line, "DELEGATE_TO:"))
-		} else if strings.HasPrefix(line, "TASK:") {
-			task = strings.TrimSpace(strings.TrimPrefix(line, "TASK:"))
-		} else if strings.HasPrefix(line, "INSTRUCTIONS:") {
-			instructions = strings.TrimSpace(strings.TrimPrefix(line, "INSTRUCTIONS:"))
+		log.Printf("[%s] Processing line %d: '%s'", a.Type, i, line)
+
+		// Handle both plain format and markdown formatting (with asterisks)
+		if strings.HasPrefix(line, "**DELEGATE_TO:**") || strings.HasPrefix(line, "DELEGATE_TO:") {
+			if strings.HasPrefix(line, "**DELEGATE_TO:**") {
+				delegateToAgent = strings.TrimSpace(strings.TrimPrefix(line, "**DELEGATE_TO:**"))
+			} else {
+				delegateToAgent = strings.TrimSpace(strings.TrimPrefix(line, "DELEGATE_TO:"))
+			}
+			// Remove backticks, quotes, and other formatting characters
+			delegateToAgent = strings.Trim(delegateToAgent, "`\"'* ")
+			log.Printf("[%s] Found delegation target: '%s'", a.Type, delegateToAgent)
+		} else if strings.HasPrefix(line, "**TASK:**") || strings.HasPrefix(line, "TASK:") {
+			if strings.HasPrefix(line, "**TASK:**") {
+				task = strings.TrimSpace(strings.TrimPrefix(line, "**TASK:**"))
+			} else {
+				task = strings.TrimSpace(strings.TrimPrefix(line, "TASK:"))
+			}
+			// Remove backticks, quotes, and other formatting characters
+			task = strings.Trim(task, "`\"'* ")
+			log.Printf("[%s] Found task: '%s'", a.Type, task)
+		} else if strings.HasPrefix(line, "**INSTRUCTIONS:**") || strings.HasPrefix(line, "INSTRUCTIONS:") {
+			if strings.HasPrefix(line, "**INSTRUCTIONS:**") {
+				instructions = strings.TrimSpace(strings.TrimPrefix(line, "**INSTRUCTIONS:**"))
+			} else {
+				instructions = strings.TrimSpace(strings.TrimPrefix(line, "INSTRUCTIONS:"))
+			}
+			log.Printf("[%s] Found instructions: '%s'", a.Type, instructions[:minInt(100, len(instructions))]+"...")
+		}
+		// Handle JSON format (e.g., "DELEGATE_TO": "react",)
+		if strings.Contains(line, `"DELEGATE_TO":`) {
+			// Extract value from JSON format: "DELEGATE_TO": "value",
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				value := strings.TrimSpace(parts[1])
+				// Remove quotes, commas, and other JSON formatting
+				delegateToAgent = strings.Trim(value, `"',`)
+				log.Printf("[%s] Found JSON delegation target: '%s'", a.Type, delegateToAgent)
+			}
+		} else if strings.Contains(line, `"TASK":`) {
+			// Extract value from JSON format: "TASK": "value",
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				value := strings.TrimSpace(parts[1])
+				// Remove quotes, commas, and other JSON formatting
+				task = strings.Trim(value, `"',`)
+				log.Printf("[%s] Found JSON task: '%s'", a.Type, task)
+			}
+		} else if strings.Contains(line, `"INSTRUCTIONS":`) {
+			// Extract value from JSON format: "INSTRUCTIONS": "value",
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				value := strings.TrimSpace(strings.Join(parts[1:], ":")) // In case instructions contain colons
+				// Remove quotes and leading comma, but keep the content
+				value = strings.TrimLeft(value, ` "`)
+				if strings.HasSuffix(value, `",`) {
+					value = value[:len(value)-2] // Remove trailing ",
+				} else if strings.HasSuffix(value, `"`) {
+					value = value[:len(value)-1] // Remove trailing "
+				}
+				instructions = value
+				log.Printf("[%s] Found JSON instructions: '%s'", a.Type, instructions[:minInt(100, len(instructions))]+"...")
+			}
 		}
 	}
+
+	log.Printf("[%s] Delegation parsing results - Agent: '%s', Task: '%s', Instructions length: %d",
+		a.Type, delegateToAgent, task, len(instructions))
 
 	// If we have delegation instructions, create and send message
 	if delegateToAgent != "" && task != "" {
@@ -355,7 +437,7 @@ func (a *Agent) parseDelegation(response string, originalMsg AgentMessage) {
 		case "react":
 			targetAgent = ReactAgent
 		default:
-			log.Printf("[%s] Unknown agent type for delegation: %s", a.Type, delegateToAgent)
+			log.Printf("[%s] Unknown agent type for delegation: '%s' (cleaned from response)", a.Type, delegateToAgent)
 			return
 		}
 
@@ -382,6 +464,14 @@ func generateID() string {
 
 func getCurrentTimestamp() int64 {
 	return 1704067200 // Simplified timestamp
+}
+
+// minInt returns the smaller of two integers
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // UpdateProjectContext safely updates the project context

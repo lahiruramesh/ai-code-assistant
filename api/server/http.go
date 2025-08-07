@@ -114,6 +114,12 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/status", s.handleStatusRequest).Methods("GET", "OPTIONS")
 	api.HandleFunc("/agents", s.handleAgentsList).Methods("GET", "OPTIONS")
 	api.HandleFunc("/models", s.handleModelsRequest).Methods("GET", "OPTIONS")
+	api.HandleFunc("/models/all", s.handleAllModelsRequest).Methods("GET", "OPTIONS")
+	api.HandleFunc("/models/switch", s.handleSwitchModel).Methods("POST", "OPTIONS")
+
+	// Token usage endpoints
+	api.HandleFunc("/tokens/usage/{sessionId}", s.handleTokenUsage).Methods("GET", "OPTIONS")
+	api.HandleFunc("/tokens/stats", s.handleTokenStats).Methods("GET", "OPTIONS")
 
 	// Project management endpoints
 	api.HandleFunc("/projects", s.handleProjectsRequest).Methods("GET", "OPTIONS")
@@ -850,8 +856,17 @@ func (s *Server) handleProjectFiles(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	projectName := vars["name"]
 
-	// Get project path from server configuration
-	projectPath := filepath.Join(s.projectPath, projectName)
+	// Check for source parameter
+	source := r.URL.Query().Get("source")
+	var projectPath string
+
+	if source == "aiagent" {
+		// Use the aiagent path for Monaco editor integration
+		projectPath = filepath.Join("/tmp/aiagent", projectName)
+	} else {
+		// Default to server project path
+		projectPath = filepath.Join(s.projectPath, projectName)
+	}
 
 	// Check if project directory exists
 	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
@@ -875,10 +890,12 @@ func (s *Server) handleProjectFiles(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"project": projectName,
 		"files":   fileTree,
+		"source":  source,
+		"path":    projectPath,
 	}
 
 	json.NewEncoder(w).Encode(response)
-	log.Printf("[PROJECT_FILES] project=%s files_count=%d", projectName, len(fileTree))
+	log.Printf("[PROJECT_FILES] project=%s source=%s files_count=%d", projectName, source, len(fileTree))
 }
 
 // handleFileContent handles reading and writing file content
@@ -889,9 +906,20 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
 	projectName := vars["name"]
 	filePath := vars["filepath"]
 
+	// Check for source parameter
+	source := r.URL.Query().Get("source")
+	var projectPath string
+
+	if source == "aiagent" {
+		// Use the aiagent path for Monaco editor integration
+		projectPath = filepath.Join("/tmp/aiagent", projectName)
+	} else {
+		// Default to server project path
+		projectPath = filepath.Join(s.projectPath, projectName)
+	}
+
 	// Sanitize file path to prevent directory traversal
 	filePath = strings.ReplaceAll(filePath, "..", "")
-	projectPath := filepath.Join(s.projectPath, projectName)
 	fullPath := filepath.Join(projectPath, filePath)
 
 	// Ensure the file is within the project directory
@@ -1017,4 +1045,124 @@ func (s *Server) buildFileTree(basePath, relativePath string) ([]FileNode, error
 // generateSessionID creates a unique session identifier
 func generateSessionID() string {
 	return uuid.New().String()
+}
+
+// handleAllModelsRequest returns all available models from all providers
+func (s *Server) handleAllModelsRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Get models from LLM service
+	allModels := s.coordinator.GetAllAvailableModels()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"models": allModels,
+	})
+}
+
+// handleSwitchModel handles model switching requests
+func (s *Server) handleSwitchModel(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	var request struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+		AutoMode bool   `json:"auto_mode"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	// Update coordinator with new model settings (would need to be implemented)
+	err := s.coordinator.SwitchModel(request.Provider, request.Model, request.AutoMode)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Failed to switch model: %v", err),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"provider":  request.Provider,
+		"model":     request.Model,
+		"auto_mode": request.AutoMode,
+	})
+
+	log.Printf("[MODEL_SWITCH] provider=%s model=%s auto_mode=%v", request.Provider, request.Model, request.AutoMode)
+}
+
+// handleTokenUsage returns token usage for a specific session
+func (s *Server) handleTokenUsage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	vars := mux.Vars(r)
+	sessionID := vars["sessionId"]
+
+	if s.projectDB == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Database not available",
+		})
+		return
+	}
+
+	tokenUsage, err := s.projectDB.GetSessionTokenUsage(sessionID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Failed to get token usage: %v", err),
+		})
+		return
+	}
+
+	// Calculate totals
+	var totalInput, totalOutput, totalTokens int
+	for _, usage := range tokenUsage {
+		totalInput += usage.InputTokens
+		totalOutput += usage.OutputTokens
+		totalTokens += usage.TotalTokens
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"session_id":    sessionID,
+		"total_input":   totalInput,
+		"total_output":  totalOutput,
+		"total_tokens":  totalTokens,
+		"usage_details": tokenUsage,
+		"request_count": len(tokenUsage),
+	})
+}
+
+// handleTokenStats returns overall token usage statistics
+func (s *Server) handleTokenStats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if s.projectDB == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Database not available",
+		})
+		return
+	}
+
+	stats, err := s.projectDB.GetTokenUsageStats()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Failed to get token stats: %v", err),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(stats)
 }

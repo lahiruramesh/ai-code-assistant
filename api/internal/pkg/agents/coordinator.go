@@ -132,7 +132,11 @@ func (c *Coordinator) Stop() {
 
 // ProcessUserRequestWithLoop processes a user request using the loop manager
 func (c *Coordinator) ProcessUserRequestWithLoop(requestID, request string) (*AgentLoop, error) {
-	if !c.active {
+	c.mutex.RLock()
+	active := c.active
+	c.mutex.RUnlock()
+
+	if !active {
 		return nil, fmt.Errorf("coordinator is not active")
 	}
 
@@ -147,6 +151,14 @@ func (c *Coordinator) GetLoopManager() *LoopManager {
 
 // ProcessUserRequest processes a user request through the supervisor (legacy method)
 func (c *Coordinator) ProcessUserRequest(request string) error {
+	c.mutex.RLock()
+	active := c.active
+	c.mutex.RUnlock()
+
+	if !active {
+		return fmt.Errorf("coordinator is not active")
+	}
+
 	log.Printf("Processing user request: %s", request)
 
 	// Update context with user requirements
@@ -187,12 +199,20 @@ func (c *Coordinator) monitorAgentOutbox(agentType AgentType, agent *Agent) {
 
 // sendMessage sends a message through the system
 func (c *Coordinator) sendMessage(msg AgentMessage) error {
-	if !c.active {
+	c.mutex.RLock()
+	active := c.active
+	c.mutex.RUnlock()
+
+	if !active {
 		return fmt.Errorf("coordinator is not active")
 	}
 
-	c.messageRouter <- msg
-	return nil
+	select {
+	case c.messageRouter <- msg:
+		return nil
+	default:
+		return fmt.Errorf("message router is full")
+	}
 }
 
 // routeMessages handles message routing between agents
@@ -348,10 +368,58 @@ func (c *Coordinator) GetAvailableModels() map[string][]string {
 	return map[string][]string{}
 }
 
+// GetAllAvailableModels returns all available models from all providers
+func (c *Coordinator) GetAllAvailableModels() map[string]map[string][]string {
+	if c.llmService != nil {
+		return c.llmService.GetAllAvailableModels()
+	}
+	return map[string]map[string][]string{}
+}
+
 // GetLLMProvider returns the current LLM provider
 func (c *Coordinator) GetLLMProvider() string {
 	if c.llmService != nil {
 		return string(c.llmService.Provider)
 	}
 	return "none"
+}
+
+// SwitchModel switches the LLM provider and model
+func (c *Coordinator) SwitchModel(provider, model string, autoMode bool) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Convert string provider to LLMProvider type
+	var llmProvider llm.LLMProvider
+	switch provider {
+	case "ollama":
+		llmProvider = llm.OllamaProvider
+	case "bedrock":
+		llmProvider = llm.BedrockProvider
+	case "openrouter":
+		llmProvider = llm.OpenRouterProvider
+	case "gemini":
+		llmProvider = llm.GeminiProvider
+	case "anthropic":
+		llmProvider = llm.AnthropicProvider
+	default:
+		return fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	// Create new LLM service with the specified provider and model
+	newLLMService, err := llm.NewLLMService(llmProvider, model)
+	if err != nil {
+		return fmt.Errorf("failed to create new LLM service: %v", err)
+	}
+
+	// Update the coordinator's LLM service
+	c.llmService = newLLMService
+
+	// Update all agents with the new LLM service
+	for _, agent := range c.agents {
+		agent.LLMService = newLLMService
+	}
+
+	log.Printf("[MODEL_SWITCH] Successfully switched to provider=%s model=%s auto_mode=%v", provider, model, autoMode)
+	return nil
 }

@@ -218,7 +218,8 @@ export const App = () => {
     // Fetch file content if not already loaded
     if (!fileContents[filePath] && activeProject) {
       try {
-        const response = await fetch(`${API_BASE}/projects/${activeProject.name}/files/${filePath}`);
+        // Updated to use the aiagent source for Monaco editor
+        const response = await fetch(`${API_BASE}/projects/${activeProject.name}/files/${filePath}?source=aiagent`);
         if (response.ok) {
           const data = await response.json();
           setFileContents(prev => ({

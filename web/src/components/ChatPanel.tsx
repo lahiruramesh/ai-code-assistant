@@ -4,9 +4,12 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Send, User, Bot, Sparkles, Code2, Palette, Activity, AlertCircle, StopCircle } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Send, User, Bot, Sparkles, Code2, Palette, Activity, AlertCircle, StopCircle, ChevronDown, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { eventManager, EVENTS } from '@/services/eventManager';
+import ModelSelector from '@/components/ModelSelector';
+import TokenUsageDisplay from '@/components/TokenUsageDisplay';
 
 interface Message {
   id: string;
@@ -51,6 +54,13 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [sessionId] = useState(() => `session_${Date.now()}`);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Handler for model changes
+  const handleModelChange = (provider: string, model: string) => {
+    setCurrentProvider(provider);
+    addStatusMessage(`Switched to ${provider}/${model}`, 'info');
+  };
   
   const wsRef = useRef<WebSocket | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -367,11 +377,42 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
                 {currentProvider}
               </Badge>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="h-8 w-8 p-0"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
           </div>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
           Supervisor • Code Editor • React Specialist • DevOps
         </p>
+        
+        {/* Collapsible Settings Panel */}
+        <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <CollapsibleContent className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Model Selector */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">Model Configuration</h3>
+                <ModelSelector onModelChange={handleModelChange} />
+              </div>
+              
+              {/* Token Usage */}
+              <div>
+                <h3 className="text-sm font-medium mb-2">Token Usage</h3>
+                <TokenUsageDisplay 
+                  sessionId={sessionId}
+                  showGlobalStats={false}
+                  className="max-h-48"
+                />
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       {/* Quick Actions */}

@@ -210,9 +210,12 @@ func ExecuteToolCall(toolCall api.ToolCall) (string, error) {
 	executionID := generateExecutionID()
 	startTime := time.Now()
 
-	// Log tool call start
-	log.Printf("[TOOL_EXEC_START] tool=%s execution_id=%s timestamp=%s args_count=%d",
-		toolCall.Function.Name, executionID, startTime.Format(time.RFC3339), len(toolCall.Function.Arguments))
+	// Log tool call start with detailed parameters
+	argsJSON, _ := json.Marshal(toolCall.Function.Arguments)
+	log.Printf("[TOOL_EXEC_START] tool=%s execution_id=%s timestamp=%s", 
+		toolCall.Function.Name, executionID, startTime.Format(time.RFC3339))
+	log.Printf("[TOOL_EXEC_PARAMS] tool=%s execution_id=%s parameters=%s", 
+		toolCall.Function.Name, executionID, string(argsJSON))
 
 	var result string
 	var err error
@@ -243,13 +246,22 @@ func ExecuteToolCall(toolCall api.ToolCall) (string, error) {
 		resultSize = len(result)
 	}
 
-	// Log tool call completion
+	// Log tool call completion with detailed results
 	if success {
 		log.Printf("[TOOL_EXEC_SUCCESS] tool=%s execution_id=%s duration_ms=%d result_size=%d timestamp=%s",
 			toolCall.Function.Name, executionID, duration.Milliseconds(), resultSize, endTime.Format(time.RFC3339))
+		// Log a preview of the result (first 200 chars)
+		if len(result) > 0 {
+			preview := result
+			if len(preview) > 200 {
+				preview = preview[:200] + "..."
+			}
+			log.Printf("[TOOL_EXEC_RESULT] tool=%s execution_id=%s result_preview=%s", 
+				toolCall.Function.Name, executionID, preview)
+		}
 	} else {
-		log.Printf("[TOOL_EXEC_FAILURE] tool=%s execution_id=%s duration_ms=%d error_type=%s timestamp=%s",
-			toolCall.Function.Name, executionID, duration.Milliseconds(), getErrorType(err), endTime.Format(time.RFC3339))
+		log.Printf("[TOOL_EXEC_FAILURE] tool=%s execution_id=%s duration_ms=%d error_type=%s error_message=%s timestamp=%s",
+			toolCall.Function.Name, executionID, duration.Milliseconds(), getErrorType(err), err.Error(), endTime.Format(time.RFC3339))
 	}
 
 	return result, err

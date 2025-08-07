@@ -44,7 +44,8 @@ export const FileExplorer = ({ activeFile, onFileSelect, projectName }: FileExpl
       setError(null);
       
       try {
-        const response = await fetch(`${API_BASE}/projects/${projectName}/files`);
+        // Updated to use the new aiagent path
+        const response = await fetch(`${API_BASE}/projects/${projectName}/files?source=aiagent`);
         if (!response.ok) {
           throw new Error(`Failed to fetch files: ${response.statusText}`);
         }
@@ -182,6 +183,11 @@ export const FileExplorer = ({ activeFile, onFileSelect, projectName }: FileExpl
             </Button>
           </div>
         </div>
+        {projectName && (
+          <Badge variant="outline" className="text-xs">
+            /tmp/aiagent/{projectName}
+          </Badge>
+        )}
       </div>
 
       {/* File Tree */}

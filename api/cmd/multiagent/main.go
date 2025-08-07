@@ -16,9 +16,9 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"agent/internal/pkg/agents"
 	"agent/internal/pkg/llm"
 	"agent/server"
-	"agent/internal/pkg/agents"
 )
 
 // getEnvOrDefault returns the environment variable value or a default if not set
@@ -62,13 +62,19 @@ func main() {
 	switch *llmProvider {
 	case "ollama":
 		provider = llm.OllamaProvider
-		if *model == "anthropic.claude-3-5-sonnet-20241022-v2:0" {
+		if *model == "anthropic.claude-3-5-sonnet-20241022-v2:0" || *model == "deepseek/deepseek-chat-v3-0324:free" {
 			*model = "qwen2.5:1.5b" // Default Ollama model
 		}
 	case "bedrock":
 		provider = llm.BedrockProvider
+	case "openrouter":
+		provider = llm.OpenRouterProvider
+	case "gemini":
+		provider = llm.GeminiProvider
+	case "anthropic":
+		provider = llm.AnthropicProvider
 	default:
-		log.Fatalf("Invalid LLM provider: %s. Use 'ollama' or 'bedrock'", *llmProvider)
+		log.Fatalf("Invalid LLM provider: %s. Use 'ollama', 'bedrock', 'openrouter', 'gemini', or 'anthropic'", *llmProvider)
 	}
 
 	log.Printf("Using LLM provider: %s with model: %s", provider, *model)
@@ -168,8 +174,13 @@ func main() {
 			}
 
 			input = strings.TrimSpace(input)
-			if input == "quit" || input == "exit" || input == "" {
+			if input == "quit" || input == "exit" {
 				break
+			}
+
+			// Skip empty inputs
+			if input == "" {
+				continue
 			}
 
 			// Generate unique request ID
