@@ -78,19 +78,42 @@ const suggestions: Suggestion[] = [
 
 export const HomePage = () => {
   const [input, setInput] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (prompt?: string) => {
+  const handleSubmit = async (prompt?: string) => {
     const message = prompt || input;
-    if (message.trim()) {
-      // Generate a new chat/project ID and navigate to chat page
-      const chatId = crypto.randomUUID();
-      navigate(`/chat/${chatId}`, { 
-        state: { 
-          initialMessage: message,
-          isNewChat: true 
-        } 
-      });
+    if (message.trim() && !isCreatingProject) {
+      setIsCreatingProject(true);
+      try {
+        // Create a new project via API
+        const response = await fetch('http://localhost:8084/api/v1/chat/create-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: message
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Navigate to the new project page
+          navigate(`/projects/${data.project_id}`, {
+            state: {
+              initialMessage: message,
+              isNewProject: true
+            }
+          });
+        } else {
+          console.error('Failed to create project');
+          setIsCreatingProject(false);
+        }
+      } catch (error) {
+        console.error('Error creating project:', error);
+        setIsCreatingProject(false);
+      }
     }
   };
 
@@ -142,29 +165,41 @@ export const HomePage = () => {
         <div className="max-w-2xl mx-auto mb-12">
           <Card className="border-2 border-dashed border-muted-foreground/25 bg-background/50 backdrop-blur">
             <CardContent className="p-6">
-              <div className="space-y-4">
-                <div className="flex space-x-2">
-                  <Input
-                    placeholder="Describe the React app you want to build..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
-                    className="flex-1 text-base"
-                  />
-                  <Button 
-                    onClick={() => handleSubmit()}
-                    disabled={!input.trim()}
-                    size="lg"
-                    className="px-6"
-                  >
-                    <ArrowRight className="h-4 w-4 mr-2" />
-                    Build
-                  </Button>
+              {isCreatingProject ? (
+                <div className="text-center space-y-4 py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold">Creating Your Project</h3>
+                    <p className="text-muted-foreground">
+                      Setting up your React application with Docker container...
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground text-center">
-                  Or choose from one of the suggestions below
-                </p>
-              </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex space-x-2">
+                    <Input
+                      placeholder="Describe the React app you want to build..."
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
+                      className="flex-1 text-base"
+                    />
+                    <Button 
+                      onClick={() => handleSubmit()}
+                      disabled={!input.trim()}
+                      size="lg"
+                      className="px-6"
+                    >
+                      <ArrowRight className="h-4 w-4 mr-2" />
+                      Build
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Or choose from one of the suggestions below
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -182,8 +217,8 @@ export const HomePage = () => {
             {suggestions.map((suggestion) => (
               <Card 
                 key={suggestion.id}
-                className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 group border-muted-foreground/20 hover:border-primary/50"
-                onClick={() => handleSuggestionClick(suggestion)}
+                className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 group border-muted-foreground/20 hover:border-primary/50 ${isCreatingProject ? 'opacity-50 pointer-events-none' : ''}`}
+                onClick={() => !isCreatingProject && handleSuggestionClick(suggestion)}
               >
                 <CardContent className="p-6">
                   <div className="space-y-4">

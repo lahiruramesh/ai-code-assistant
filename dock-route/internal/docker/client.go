@@ -572,3 +572,101 @@ func (c *Client) GetContainerInfo(ctx context.Context, containerName string) (*c
 
 	return &containers[0], nil
 }
+
+// StartContainer starts a stopped container
+func (c *Client) StartContainer(ctx context.Context, containerName string) error {
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", containerName)),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return fmt.Errorf("container '%s' not found", containerName)
+	}
+
+	containerInfo := containers[0]
+
+	if containerInfo.State == "running" {
+		return fmt.Errorf("container '%s' is already running", containerName)
+	}
+
+	err = c.cli.ContainerStart(ctx, containerInfo.ID, container.StartOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to start container: %w", err)
+	}
+
+	return nil
+}
+
+// StopContainer stops a running container
+func (c *Client) StopContainer(ctx context.Context, containerName string) error {
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", containerName)),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return fmt.Errorf("container '%s' not found", containerName)
+	}
+
+	containerInfo := containers[0]
+
+	if containerInfo.State != "running" {
+		return fmt.Errorf("container '%s' is not running", containerName)
+	}
+
+	timeout := 10 // seconds
+	err = c.cli.ContainerStop(ctx, containerInfo.ID, container.StopOptions{
+		Timeout: &timeout,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to stop container: %w", err)
+	}
+
+	return nil
+}
+
+// ShowLogs displays container logs
+func (c *Client) ShowLogs(ctx context.Context, containerName string, follow bool, tail string) error {
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", containerName)),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return fmt.Errorf("container '%s' not found", containerName)
+	}
+
+	containerInfo := containers[0]
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     follow,
+		Tail:       tail,
+		Timestamps: true,
+	}
+
+	logs, err := c.cli.ContainerLogs(ctx, containerInfo.ID, options)
+	if err != nil {
+		return fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer logs.Close()
+
+	// Stream logs to stdout
+	_, err = io.Copy(os.Stdout, logs)
+	if err != nil {
+		return fmt.Errorf("failed to stream logs: %w", err)
+	}
+
+	return nil
+}

@@ -4,8 +4,8 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Send, User, Bot, Sparkles, Code2, Palette, Activity, AlertCircle, StopCircle, ChevronDown, Settings } from 'lucide-react';
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Send, User, Bot, Sparkles, Code2, Palette, Activity, AlertCircle, StopCircle, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { eventManager, EVENTS } from '@/services/eventManager';
 import ModelSelector from '@/components/ModelSelector';
@@ -34,39 +34,31 @@ const WS_BASE = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8084/api/v
 
 interface ChatPanelProps {
   chatId?: string;
+  projectId?: string | null;
   initialMessage?: string;
 }
 
-export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: 'Hello! I\'m your AI assistant powered by multi-agent system. I can help you build React applications with authentication, file upload, and deployment. What would you like to create today?',
-      sender: 'assistant',
-      timestamp: new Date(),
-      type: 'text'
-    }
-  ]);
+export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps) => {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [sessionId] = useState(() => `session_${Date.now()}`);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  
+
   // Project-related state
-  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
-  const [projectUrl, setProjectUrl] = useState<string>('');
-  const [projectPath, setProjectPath] = useState<string>('');
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
 
   // Handler for model changes
   const handleModelChange = (provider: string, model: string) => {
     setCurrentProvider(provider);
     addStatusMessage(`Switched to ${provider}/${model}`, 'info');
   };
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -74,35 +66,104 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
   // Initialize WebSocket connection only when we have a project
   useEffect(() => {
     fetchProviderInfo();
-    
+
     return () => {
       if (wsRef.current) {
-        wsRef.current.close();
+        wsRef.current.close(1000, 'Component unmounting');
       }
     };
   }, []);
 
-  // Handle initial message from homepage
-  useEffect(() => {
-    if (initialMessage && initialMessage.trim() && !currentProjectId && !isProcessing) {
-      // Set the input and trigger project creation
-      setInput(initialMessage);
-      const timer = setTimeout(() => {
-        if (!currentProjectId && !isProcessing) {
-          createNewProject(initialMessage);
-        }
-      }, 1000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [initialMessage]); // Remove currentProjectId from deps to prevent infinite loop
+  // Keep WebSocket connection alive while on project page
+  // useEffect(() => {
+  //   if (projectId && isConnected) {
+  //     const keepAlive = setInterval(() => {
+  //       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+  //         // Send a ping to keep connection alive
+  //         wsRef.current.send(JSON.stringify({ type: 'ping' }));
+  //       }
+  //     }, 30000); // Ping every 30 seconds
 
-  // Load existing chat if chatId is provided
+  //     return () => clearInterval(keepAlive);
+  //   }
+  // }, [projectId, isConnected]);
+
+  // Handle initial message from homepage or project creation
+  const [hasProcessedInitialMessage, setHasProcessedInitialMessage] = useState(false);
+
+  // useEffect(() => {
+  //   // Only process initial message once and only if it's actually new
+  //   if (initialMessage && initialMessage.trim() && !hasProcessedInitialMessage) {
+  //     if (!currentProjectId && !isProcessing) {
+  //       // New project creation scenario
+  //       setInput(initialMessage);
+  //       setHasProcessedInitialMessage(true);
+  //     } else if (currentProjectId && isConnected && !isProcessing) {
+  //       // Existing project with initial message - auto-send via WebSocket
+  //       setHasProcessedInitialMessage(true);
+  //       const timer = setTimeout(() => {
+  //         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+  //           // Add the initial message to chat
+  //           addMessage(initialMessage, 'user');
+
+  //           // Send to WebSocket automatically
+  //           const messagePayload = {
+  //             message: initialMessage,
+  //             session_id: currentSessionId || sessionId,
+  //             timestamp: new Date().toISOString()
+  //           };
+
+  //           wsRef.current.send(JSON.stringify(messagePayload));
+  //           setIsTyping(true);
+  //           setIsProcessing(true);
+
+  //           // Emit build start event
+  //           eventManager.emit(EVENTS.PROJECT_BUILD_START);
+  //         }
+  //       }, 1500); // Wait for WebSocket to be fully ready
+
+  //       return () => clearTimeout(timer);
+  //     }
+  //   }
+  // }, [initialMessage, currentProjectId, isConnected, hasProcessedInitialMessage]);
+
+  // Load existing chat if chatId or projectId is provided
   useEffect(() => {
-    if (chatId) {
+    if (projectId) {
+      loadProjectChatHistory(projectId);
+      setCurrentProjectId(projectId);
+      // Auto-connect WebSocket for project
+      connectWebSocket(projectId);
+    } else if (chatId) {
       loadChatHistory(chatId);
     }
-  }, [chatId]);
+  }, [chatId, projectId]);
+
+  const loadProjectChatHistory = async (projectId: string) => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`${API_BASE}/projects/${projectId}/messages`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.messages && Array.isArray(data.messages)) {
+          const loadedMessages = data.messages.map((msg: any) => ({
+            id: msg.id.toString(),
+            content: msg.content,
+            sender: msg.role === 'user' ? 'user' : 'assistant',
+            timestamp: new Date(msg.created_at),
+            type: 'text',
+            agent_type: msg.role === 'assistant' ? 'react' : undefined
+          }));
+
+          setMessages(loadedMessages);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load project chat history:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   const loadChatHistory = async (chatId: string) => {
     try {
@@ -142,11 +203,11 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
       console.log('Project creation already in progress, skipping...');
       return;
     }
-    
+
     try {
       setIsProcessing(true);
       addStatusMessage('Creating new project...', 'processing');
-      
+
       const response = await fetch(`${API_BASE}/chat/create-session`, {
         method: 'POST',
         headers: {
@@ -160,18 +221,16 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
       if (response.ok) {
         const data = await response.json();
         setCurrentProjectId(data.project_id);
-        setProjectUrl(data.url);
-        setProjectPath(data.project_path);
         setCurrentSessionId(data.session_id);
-        
+
         addStatusMessage(`Project "${data.project_name}" created successfully!`, 'completed');
-        
+
         // Emit project events
         eventManager.emit(EVENTS.PROJECT_BUILD_START, {
           step: 'Project Setup',
           progress: 0
         });
-        
+
         // Emit project data for other components with validation
         if (data.project_id && data.project_name && data.project_path && data.url) {
           eventManager.emit('PROJECT_CREATED', {
@@ -180,15 +239,31 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
             projectPath: data.project_path,
             projectUrl: data.url
           });
+
+          // Keep preview in loading state until build completes
+          eventManager.emit(EVENTS.PROJECT_BUILD_START, {
+            step: 'Initializing Project',
+            progress: 10
+          });
         }
-        
+
+        // Redirect to project-based URL
+        window.history.replaceState({}, '', `/projects/${data.project_id}`);
+
+        // Add the initial user message to the chat
+        if (data.initial_message) {
+          addMessage(data.initial_message, 'user');
+        }
+
         // Connect WebSocket to the new project
         connectWebSocket(data.project_id);
-        
-        // Send the initial message
-        setTimeout(() => {
-          handleSend();
-        }, 1000);
+
+        // Send the initial message automatically
+        if (data.initial_message && data.session_id) {
+          setTimeout(() => {
+            sendMessageToAgent(data.initial_message, data.session_id);
+          }, 1500);
+        }
       } else {
         const errorData = await response.json();
         addStatusMessage(`Failed to create project: ${errorData.error || 'Unknown error'}`, 'error');
@@ -201,7 +276,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
     }
   };
 
-  const connectWebSocket = (projectId?: number) => {
+  const connectWebSocket = (projectId?: string) => {
     if (!projectId && !currentProjectId) {
       console.log('No project ID available for WebSocket connection');
       return;
@@ -209,14 +284,19 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
 
     const targetProjectId = projectId || currentProjectId;
     const wsUrl = `${WS_BASE}/stream/${targetProjectId}`;
-    
+
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+
     try {
       const ws = new WebSocket(wsUrl);
-      
+
       ws.onopen = () => {
         console.log('WebSocket connected to project', targetProjectId);
         setIsConnected(true);
-        addStatusMessage('Connected to AI multi-agent system', 'connection');
+        // Don't add status message for cleaner UX
       };
 
       ws.onmessage = (event) => {
@@ -228,11 +308,22 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
         }
       };
 
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      ws.onclose = (event) => {
+        console.log('WebSocket disconnected', event.code, event.reason);
         setIsConnected(false);
         setIsTyping(false);
-        addStatusMessage('Disconnected from server', 'error');
+
+        // Only show disconnect message if it wasn't intentional
+        if (event.code !== 1000) {
+          addStatusMessage('Connection lost - trying to reconnect...', 'error');
+
+          // Auto-reconnect after a delay
+          setTimeout(() => {
+            if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+              connectWebSocket(targetProjectId);
+            }
+          }, 3000);
+        }
       };
 
       ws.onerror = (error) => {
@@ -251,7 +342,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
   const handleWebSocketMessage = (data: WebSocketMessage) => {
     // Detect build-related activities
     detectBuildActivity(data);
-    
+
     switch (data.type) {
       case 'connection':
         // Connection acknowledgment handled in onopen
@@ -282,6 +373,25 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
         setIsTyping(false);
         addMessage(data.content, 'assistant', data.agent_type);
         break;
+      case 'agent_chunk':
+        // Handle streaming chunks - append to last message or create new one
+        setIsTyping(false);
+        addMessage(data.content, 'assistant', data.agent_type);
+        break;
+      case 'response_complete':
+        setIsTyping(false);
+        setIsProcessing(false);
+        addStatusMessage('Response completed', 'completed');
+        break;
+      case 'message_received':
+        addStatusMessage('Message received, processing...', 'processing');
+        break;
+      case 'debug':
+        // Only show debug messages in development
+        if (import.meta.env.DEV) {
+          addStatusMessage(data.content, 'debug');
+        }
+        break;
       default:
         // Handle any other message types
         if (data.content) {
@@ -295,9 +405,9 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
     const agentType = data.agent_type;
 
     // Detect project building start
-    if (content.includes('creating') || content.includes('setting up') || 
-        content.includes('building') || content.includes('generating') ||
-        (agentType === 'supervisor' && (content.includes('coordinate') || content.includes('breakdown')))) {
+    if (content.includes('creating') || content.includes('setting up') ||
+      content.includes('building') || content.includes('generating') ||
+      (agentType === 'supervisor' && (content.includes('coordinate') || content.includes('breakdown')))) {
       eventManager.emit(EVENTS.PROJECT_BUILD_START, {
         step: 'Project Setup',
         progress: 0
@@ -321,8 +431,8 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
       });
     }
 
-    if (content.includes('complete') || content.includes('finished') || 
-        content.includes('done') || content.includes('ready')) {
+    if (content.includes('complete') || content.includes('finished') ||
+      content.includes('done') || content.includes('ready')) {
       eventManager.emit(EVENTS.PROJECT_BUILD_COMPLETE, {
         step: 'Build & Preview',
         progress: 100
@@ -338,7 +448,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
 
   const addMessage = (content: string, sender: 'user' | 'assistant', agentType?: string) => {
     const newMessage: Message = {
-      id: Date.now().toString(),
+      id: `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       content,
       sender,
       timestamp: new Date(),
@@ -350,7 +460,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
 
   const addStatusMessage = (content: string, status: string) => {
     const statusMessage: Message = {
-      id: `status_${Date.now()}`,
+      id: `status_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
       content,
       sender: 'assistant',
       timestamp: new Date(),
@@ -358,6 +468,33 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
       agent_type: status
     };
     setMessages(prev => [...prev, statusMessage]);
+  };
+
+  const sendMessageToAgent = (message: string, sessionId?: string) => {
+    if (!message.trim() || isProcessing) return;
+
+    // If we don't have a WebSocket connection, try to connect
+    if (!isConnected) {
+      connectWebSocket();
+      addStatusMessage('Please try sending your message again once connected', 'info');
+      return;
+    }
+
+    // Send to WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const messagePayload = {
+        message: message,
+        session_id: sessionId || currentSessionId || sessionId,
+        timestamp: new Date().toISOString()
+      };
+
+      wsRef.current.send(JSON.stringify(messagePayload));
+      setIsTyping(true);
+      setIsProcessing(true);
+
+      // Emit build start event to switch to preview mode
+      eventManager.emit(EVENTS.PROJECT_BUILD_START);
+    }
   };
 
   const handleSend = () => {
@@ -369,32 +506,11 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
       return;
     }
 
-    // If we don't have a WebSocket connection, try to connect
-    if (!isConnected) {
-      connectWebSocket();
-      // Don't automatically retry sending - let user manually retry
-      addStatusMessage('Please try sending your message again once connected', 'info');
-      return;
-    }
-
     // Add user message
     addMessage(input, 'user');
-    
-    // Send to WebSocket
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      const message = {
-        message: input,
-        session_id: currentSessionId || sessionId,
-        timestamp: new Date().toISOString()
-      };
-      
-      wsRef.current.send(JSON.stringify(message));
-      setIsTyping(true);
-      setIsProcessing(true);
-      
-      // Emit build start event to switch to preview mode
-      eventManager.emit(EVENTS.PROJECT_BUILD_START);
-    }
+
+    // Send the message
+    sendMessageToAgent(input);
 
     setInput('');
   };
@@ -436,11 +552,11 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
     }
   }, [messages]);
 
-  const quickActions = [
-    { label: 'React todo app with auth', icon: Code2 },
-    { label: 'Dashboard with file upload', icon: Palette },
-    { label: 'E-commerce landing page', icon: Sparkles },
-  ];
+  // const quickActions = [
+  //   { label: 'React todo app with auth', icon: Code2 },
+  //   { label: 'Dashboard with file upload', icon: Palette },
+  //   { label: 'E-commerce landing page', icon: Sparkles },
+  // ];
 
   const handleQuickAction = (label: string) => {
     setInput(label);
@@ -477,10 +593,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          Supervisor • Code Editor • React Specialist • DevOps
-        </p>
-        
+
         {/* Collapsible Settings Panel */}
         <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
           <CollapsibleContent className="mt-4 space-y-4">
@@ -490,11 +603,11 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
                 <h3 className="text-sm font-medium mb-2">Model Configuration</h3>
                 <ModelSelector onModelChange={handleModelChange} />
               </div>
-              
+
               {/* Token Usage */}
               <div>
                 <h3 className="text-sm font-medium mb-2">Token Usage</h3>
-                <TokenUsageDisplay 
+                <TokenUsageDisplay
                   sessionId={sessionId}
                   showGlobalStats={false}
                   className="max-h-48"
@@ -506,7 +619,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
       </div>
 
       {/* Quick Actions */}
-      <div className="flex-shrink-0 p-4 space-y-2">
+      {/* <div className="flex-shrink-0 p-4 space-y-2">
         <p className="text-xs text-muted-foreground font-medium">Quick Actions</p>
         <div className="flex flex-wrap gap-2">
           {quickActions.map((action, index) => {
@@ -525,12 +638,27 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
             );
           })}
         </div>
-      </div>
+      </div> */}
 
       {/* Messages - Scrollable */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <ScrollArea className="flex-1" ref={scrollAreaRef}>
           <div className="p-4 space-y-4">
+            {isLoadingHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-center space-y-2">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+                  <p className="text-sm text-muted-foreground">Loading chat history...</p>
+                </div>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <p className="text-muted-foreground text-center">
+                  Start a conversation by typing a message below
+                </p>
+              </div>
+            ) : null}
+
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -544,15 +672,15 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
                     <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                       {message.type === 'status' ? (
                         message.agent_type === 'error' ? <AlertCircle className="w-4 h-4" /> :
-                        message.agent_type === 'processing' ? <Activity className="w-4 h-4" /> :
-                        <Bot className="w-4 h-4" />
+                          message.agent_type === 'processing' ? <Activity className="w-4 h-4" /> :
+                            <Bot className="w-4 h-4" />
                       ) : (
                         message.agent_type?.charAt(0)?.toUpperCase() || 'AI'
                       )}
                     </AvatarFallback>
                   </Avatar>
                 )}
-                
+
                 <div
                   className={cn(
                     "rounded-lg px-4 py-2 max-w-[80%] break-words",
@@ -568,14 +696,14 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
                       {message.agent_type.charAt(0).toUpperCase() + message.agent_type.slice(1)} Agent
                     </div>
                   )}
-                  
+
                   <div className={cn(
                     "text-sm leading-relaxed",
                     message.type === 'status' && "text-muted-foreground text-xs"
                   )}>
                     {message.content}
                   </div>
-                  
+
                   <div className={cn(
                     "text-xs mt-1 opacity-70",
                     message.sender === 'user' ? "text-primary-foreground/70" : "text-muted-foreground"
@@ -593,7 +721,7 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
                 )}
               </div>
             ))}
-            
+
             {/* Typing indicator */}
             {isTyping && (
               <div className="flex gap-3 justify-start">
@@ -622,14 +750,14 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder={isConnected ? "Describe what you want to build..." : "Connecting..."}
             disabled={!isConnected || isProcessing}
             className="flex-1"
           />
           {isProcessing ? (
-            <Button 
-              onClick={handleCancel} 
+            <Button
+              onClick={handleCancel}
               size="icon"
               variant="destructive"
               className="shrink-0"
@@ -637,8 +765,8 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
               <StopCircle className="w-4 h-4" />
             </Button>
           ) : (
-            <Button 
-              onClick={handleSend} 
+            <Button
+              onClick={handleSend}
               disabled={!input.trim() || !isConnected}
               size="icon"
               className="shrink-0"
@@ -647,11 +775,11 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
             </Button>
           )}
         </div>
-        
+
         {!isConnected && (
           <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
-            Check if the Go server is running on port 8084
+            Check if the server is running on port 8084
           </div>
         )}
       </div>

@@ -4,24 +4,26 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
 from app.prompts.react_prompts import react_prompt
 from app.agents.tools import get_tools_for_project
+from ..config import MODEL_NAME, OPENROUTER_API_KEY, OPENROUTER_API_BASE
 
 load_dotenv()
 
 class ReActAgent:
-    def __init__(self, project_path: str = None):
+    def __init__(self, project_path: str = None, container_name: str = None):
         self.project_path = project_path or "/tmp/projects"
+        self.container_name = container_name
         
         # Initialize the LLM from OpenRouter
         self.llm = ChatOpenAI(
-            model=os.getenv("MODEL_NAME", "gpt-4"),
-            openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-            openai_api_base=os.getenv("OPENROUTER_API_BASE"),
+            model=MODEL_NAME,
+            openai_api_key=OPENROUTER_API_KEY,
+            openai_api_base=OPENROUTER_API_BASE,
             streaming=True,
             temperature=0.1,
         )
         
         # Get tools with project context
-        self.tools = get_tools_for_project(self.project_path)
+        self.tools = get_tools_for_project(self.project_path, self.container_name)
         
         # Create the agent with project-aware prompt
         self.prompt = self._get_project_aware_prompt()
@@ -43,12 +45,14 @@ If you need to create, edit, or analyze files, they should be relative to the pr
 """
         return react_prompt.partial(project_context=project_context)
 
-    async def stream_response(self, user_input: str, project_path: str = None):
+    async def stream_response(self, user_input: str, project_path: str = None, container_name: str = None):
         """Streams the agent's thoughts and actions with project context."""
         if project_path:
             self.project_path = project_path
-            # Update tools with new project path
-            self.tools = get_tools_for_project(self.project_path)
+            if container_name:
+                self.container_name = container_name
+            # Update tools with new project path and container
+            self.tools = get_tools_for_project(self.project_path, self.container_name)
             self.agent = create_react_agent(self.llm, self.tools, self._get_project_aware_prompt())
             self.agent_executor = AgentExecutor(
                 agent=self.agent,

@@ -3,6 +3,7 @@ import uuid
 import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.agents.react_agent import ReActAgent
+from ..config import PROJECTS_DIR
 from app.database.service import db_service
 from app.database.models import (
     ConversationMessageCreate, TokenUsageCreate, ProjectCreate, ChatRequest
@@ -13,7 +14,7 @@ from app.utils.docker_route import deploy_app
 router = APIRouter()
 
 @router.websocket("/stream/{project_id}")
-async def websocket_stream(websocket: WebSocket, project_id: int):
+async def websocket_stream(websocket: WebSocket, project_id: str):
     await websocket.accept()
     
     # Generate session ID
@@ -26,10 +27,10 @@ async def websocket_stream(websocket: WebSocket, project_id: int):
         return
     
     # Get project path
-    project_path = os.path.abspath(os.path.join(os.getenv("PROJECTS_DIR"), project.name))
+    project_path = os.path.abspath(os.path.join(PROJECTS_DIR, project.name))
     
-    # Initialize agent with project context
-    agent = ReActAgent(project_path=project_path)
+    # Initialize agent with project context and container name
+    agent = ReActAgent(project_path=project_path, container_name=project.docker_container)
     
     try:
         await websocket.send_json({
@@ -49,14 +50,27 @@ async def websocket_stream(websocket: WebSocket, project_id: int):
             
             # Store user message
             user_message = ConversationMessageCreate(
-                session_id=session_id,
                 project_id=project_id,
                 role="user",
                 content=message,
+                message_type="chat",
                 model=model,
                 provider=provider
             )
             db_service.create_conversation_message(user_message)
+            
+            # Get chat history summary for context
+            chat_summary = db_service.get_chat_summary(project_id)
+            
+            # Enhance the message with chat history context if available
+            enhanced_message = message
+            if chat_summary:
+                enhanced_message = f"""Previous conversation context:
+{chat_summary}
+
+Current user request: {message}
+
+Please consider the previous conversation context when responding to the current request."""
             
             # Send acknowledgment
             await websocket.send_json({
@@ -70,44 +84,83 @@ async def websocket_stream(websocket: WebSocket, project_id: int):
             input_tokens = 0
             output_tokens = 0
             
-            async for chunk in agent.stream_response(message, project_path):
-                # Parse chunk for token usage and content
-                if isinstance(chunk, dict):
-                    content = chunk.get("content", "")
-                    if content:
-                        full_response += content
+            await websocket.send_json({
+                "type": "status",
+                "content": "AI agent is thinking...",
+                "session_id": session_id,
+                "project_id": project_id
+            })
+            
+            async for chunk in agent.stream_response(enhanced_message, project_path, project.docker_container):
+                try:
+                    # Process LangChain streaming chunks
+                    if isinstance(chunk, dict):
+                        # Handle different chunk types from LangChain
+                        if chunk.get("type") == "content":
+                            content = chunk.get("content", "")
+                            if content and content.strip():
+                                full_response += content
+                                await websocket.send_json({
+                                    "type": "agent_response",
+                                    "content": content,
+                                    "session_id": session_id,
+                                    "project_id": project_id,
+                                    "agent_type": "react"
+                                })
+                        
+                        # Extract token usage if available
+                        if "input_tokens" in chunk:
+                            input_tokens += chunk.get("input_tokens", 0)
+                        if "output_tokens" in chunk:
+                            output_tokens += chunk.get("output_tokens", 0)
+                    
+                    # Handle raw string content
+                    elif isinstance(chunk, str) and chunk.strip():
+                        full_response += chunk
                         await websocket.send_json({
-                            "type": "agent_chunk",
-                            "content": content,
+                            "type": "agent_response",
+                            "content": chunk,
                             "session_id": session_id,
-                            "project_id": project_id
+                            "project_id": project_id,
+                            "agent_type": "react"
                         })
                     
-                    # Extract token usage if available
-                    if "input_tokens" in chunk:
-                        input_tokens += chunk.get("input_tokens", 0)
-                    if "output_tokens" in chunk:
-                        output_tokens += chunk.get("output_tokens", 0)
-                else:
-                    # Handle string chunks
-                    full_response += str(chunk)
+                    # Handle LangChain log patches
+                    elif hasattr(chunk, 'ops') and chunk.ops:
+                        for op in chunk.ops:
+                            if op.get('op') == 'add' and 'content' in op.get('value', {}):
+                                content = op['value']['content']
+                                if isinstance(content, str) and content.strip():
+                                    full_response += content
+                                    await websocket.send_json({
+                                        "type": "agent_response",
+                                        "content": content,
+                                        "session_id": session_id,
+                                        "project_id": project_id,
+                                        "agent_type": "react"
+                                    })
+                
+                except Exception as chunk_error:
+                    print(f"Error processing chunk: {chunk_error}")
+                    # Send the raw chunk for debugging if needed
                     await websocket.send_json({
-                        "type": "agent_chunk",
-                        "content": str(chunk),
+                        "type": "debug",
+                        "content": f"Debug: {str(chunk)[:200]}...",
                         "session_id": session_id,
                         "project_id": project_id
                     })
             
-            # Store assistant response
-            assistant_message = ConversationMessageCreate(
-                session_id=session_id,
-                project_id=project_id,
-                role="assistant",
-                content=full_response,
-                model=model,
-                provider=provider
-            )
-            db_service.create_conversation_message(assistant_message)
+            # Store assistant response (only if it's actual content, not status messages)
+            if full_response.strip():
+                assistant_message = ConversationMessageCreate(
+                    project_id=project_id,
+                    role="assistant",
+                    content=full_response,
+                    message_type="chat",
+                    model=model,
+                    provider=provider
+                )
+                db_service.create_conversation_message(assistant_message)
             
             # Store token usage
             total_tokens = input_tokens + output_tokens
@@ -150,7 +203,7 @@ async def create_chat_session(request: ChatRequest):
     # Check port availability
     port = random.randint(8084, 9999)
     try:
-        deploy_result = deploy_app("nextjs-shadcn-template", fancy_name, fancy_name.lower(), int(port))
+        deploy_result = deploy_app("react-shadcn-template", fancy_name, fancy_name.lower(), int(port))
     except Exception as e:
         return {
             "error": str(e)
@@ -168,10 +221,35 @@ async def create_chat_session(request: ChatRequest):
     
     project = db_service.create_project(project_data)
     
+    session_id = str(uuid.uuid4())
+    
+    # Store the initial user message
+    user_message = ConversationMessageCreate(
+        project_id=project.id,
+        role="user",
+        content=request.message,
+        message_type="chat",
+        model="anthropic/claude-3.5-sonnet",
+        provider="openrouter"
+    )
+    db_service.create_conversation_message(user_message)
+    
+    # Store initial AI response indicating project creation
+    initial_ai_response = ConversationMessageCreate(
+        project_id=project.id,
+        role="assistant",
+        content=f"I've created your project '{project.name}' and set up the development environment. The container is starting up and will be ready shortly. I'll help you build your application step by step.",
+        message_type="chat",
+        model="anthropic/claude-3.5-sonnet",
+        provider="openrouter"
+    )
+    db_service.create_conversation_message(initial_ai_response)
+    
     return {
         "project_id": project.id,
         "project_name": project.name,
         "project_path": project_path,
         "url": f"http://localhost:{port}",
-        "session_id": str(uuid.uuid4())
+        "session_id": session_id,
+        "initial_message": request.message
     }

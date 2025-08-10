@@ -6,4 +6,4 @@ environment:
   NODE_ENV: "development"
   PORT: "3000"
 build_args:
-  NODE_VERSION: "18"
+  NODE_VERSION: "22"

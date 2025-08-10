@@ -29,19 +29,21 @@ interface ChatSession {
 }
 
 interface Project {
-  id: number;
+  id: string;
   name: string;
   template: string;
   status: string;
   created_at: string;
+  url?: string;
 }
 
 interface ProjectSidebarProps {
-  currentChatId: string;
+  currentProjectId?: string | null;
+  currentChatId?: string;
   onClose?: () => void;
 }
 
-export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) => {
+export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: ProjectSidebarProps) => {
   const navigate = useNavigate();
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -94,20 +96,7 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
   };
 
   const handleProjectSelect = (project: Project) => {
-    // Find a chat session for this project or create new one
-    const projectChat = chatSessions.find(chat => chat.project_id === String(project.id));
-    if (projectChat) {
-      navigate(`/chat/${projectChat.id}`);
-    } else {
-      // Create new chat for this project
-      const newChatId = crypto.randomUUID();
-      navigate(`/chat/${newChatId}`, { 
-        state: { 
-          projectId: project.id,
-          projectName: project.name 
-        } 
-      });
-    }
+    navigate(`/projects/${project.id}`);
     onClose?.();
   };
 
@@ -159,7 +148,7 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
             variant="default"
           >
             <Plus className="h-4 w-4 mr-2" />
-            New Chat
+            New Project
           </Button>
           
           <Button 
@@ -175,7 +164,7 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
         <div className="relative mt-4">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search chats and projects..."
+            placeholder="Search projects..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -186,43 +175,7 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
       {/* Content */}
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
-          {/* Recent Chats */}
-          <div>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Recent Chats
-            </h3>
-            {loading ? (
-              <div className="text-sm text-muted-foreground">Loading...</div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No chats yet</div>
-            ) : (
-              <div className="space-y-1">
-                {filteredSessions.slice(0, 10).map((session) => (
-                  <Button
-                    key={session.id}
-                    variant={session.id === currentChatId ? "secondary" : "ghost"}
-                    className="w-full justify-start h-auto p-3"
-                    onClick={() => handleChatSelect(session.id)}
-                  >
-                    <MessageSquare className="h-4 w-4 mr-3 flex-shrink-0" />
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="truncate text-sm font-medium">
-                        {session.title || `Chat ${session.id.slice(0, 8)}...`}
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{formatDate(session.last_activity)}</span>
-                        <Badge variant="secondary" className="text-xs">
-                          {session.message_count}
-                        </Badge>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
 
-          <Separator />
 
           {/* Projects */}
           <div>
@@ -238,7 +191,7 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
                 {filteredProjects.map((project) => (
                   <Button
                     key={project.id}
-                    variant="ghost"
+                    variant={project.id === currentProjectId ? "secondary" : "ghost"}
                     className="w-full justify-start h-auto p-3"
                     onClick={() => handleProjectSelect(project)}
                   >
@@ -269,7 +222,7 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
       <div className="p-4 border-t">
         <div className="flex items-center justify-between">
           <div className="text-xs text-muted-foreground">
-            {chatSessions.length} chats, {projects.length} projects
+            {projects.length} projects
           </div>
           <Button variant="ghost" size="sm">
             <Settings className="h-4 w-4" />

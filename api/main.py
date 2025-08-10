@@ -105,8 +105,6 @@ def health_check():
 async def startup_event():
     """Initialize database on startup"""
     print("🚀 Starting API server...")
-    print("📁 Projects directory:", os.path.abspath("./projects"))
-    print("🗄️  Database path:", os.path.abspath("./data/database.db"))
     print("✅ Server ready!")
 
 @app.on_event("shutdown")

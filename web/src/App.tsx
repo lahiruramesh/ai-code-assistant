@@ -18,6 +18,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/projects/:projectId" element={<ChatPage />} />
           <Route path="/chat/:chatId" element={<ChatPage />} />
           <Route path="/builder" element={<Index />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

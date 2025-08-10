@@ -3,9 +3,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from app.database.service import db_service
 from app.database.models import ProjectCreate
+from ..config import PROJECTS_DIR
+from ..utils.docker_route import ensure_container_running, get_container_status_for_project
 
 router = APIRouter()
-PROJECTS_DIR = os.getenv("PROJECTS_DIR")
 
 @router.get("/")
 async def get_projects():
@@ -20,6 +21,7 @@ async def get_projects():
                 "status": p.status,
                 "docker_container": p.docker_container,
                 "port": p.port,
+                "url": f"http://localhost:{p.port}" if p.port else None,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
                 "updated_at": p.updated_at.isoformat() if p.updated_at else None
             }
@@ -46,11 +48,27 @@ async def create_project(project_data: ProjectCreate):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{project_id}")
-async def get_project(project_id: int):
-    """Get a specific project by ID"""
+async def get_project(project_id: str):
+    """Get a specific project by ID and ensure container is running"""
     project = db_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get container status and ensure it's running
+    container_info = None
+    container_started = False
+    
+    if project.docker_container:
+        container_status = get_container_status_for_project(project.docker_container)
+        container_info = container_status
+        
+        # If container needs to be started, start it
+        if container_status["needs_start"]:
+            start_result = ensure_container_running(project.docker_container)
+            container_started = start_result["success"]
+            if container_started:
+                container_info["running"] = True
+                container_info["status"] = "Started automatically"
     
     return JSONResponse(content={
         "id": project.id,
@@ -59,8 +77,11 @@ async def get_project(project_id: int):
         "status": project.status,
         "docker_container": project.docker_container,
         "port": project.port,
+        "url": f"http://localhost:{project.port}" if project.port else None,
         "created_at": project.created_at.isoformat() if project.created_at else None,
-        "updated_at": project.updated_at.isoformat() if project.updated_at else None
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        "container_info": container_info,
+        "container_started": container_started
     })
 
 @router.get("/{project_name}/preview")
@@ -185,35 +206,49 @@ async def get_file_content(project_name: str, file_path: str, source: str = None
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
 
 @router.get("/{project_id}/conversations")
-async def get_project_conversations(project_id: int):
-    """Get all conversations for a project"""
+@router.get("/{project_id}/messages")
+async def get_project_messages(project_id: str):
+    """Get all chat messages for a project"""
     project = db_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Get unique session IDs for this project
-    conn = db_service.conn
-    query = """
-    SELECT DISTINCT session_id, MIN(created_at) as first_message
-    FROM conversation_messages 
-    WHERE project_id = ? 
-    GROUP BY session_id
-    ORDER BY first_message DESC
-    """
-    sessions = conn.execute(query, [project_id]).fetchall()
+    messages = db_service.get_project_messages(project_id)
     
-    conversations = []
-    for session_id, first_message in sessions:
-        messages = db_service.get_conversation_messages(session_id)
-        if messages:
-            conversations.append({
-                "session_id": session_id,
-                "first_message_time": first_message,
-                "message_count": len(messages),
-                "last_message": messages[-1].content[:100] + "..." if len(messages[-1].content) > 100 else messages[-1].content
-            })
+    return JSONResponse(content={
+        "project_id": project_id,
+        "project_name": project.name,
+        "messages": [
+            {
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "message_type": msg.message_type,
+                "model": msg.model,
+                "provider": msg.provider,
+                "created_at": msg.created_at.isoformat() if msg.created_at else None
+            }
+            for msg in messages
+        ]
+    })
+
+async def get_project_conversations(project_id: str):
+    """Get all conversations for a project - Legacy endpoint"""
+    project = db_service.get_project_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
     
-    return JSONResponse(content={"conversations": conversations})
+    messages = db_service.get_project_messages(project_id)
+    
+    return JSONResponse(content={
+        "project_id": project_id,
+        "conversations": [{
+            "project_id": project_id,
+            "message_count": len(messages),
+            "last_message": messages[-1].content[:100] + "..." if messages and len(messages[-1].content) > 100 else (messages[-1].content if messages else ""),
+            "last_updated": messages[-1].created_at.isoformat() if messages else None
+        }] if messages else []
+    })
 
 @router.get("/{project_id}/conversations/{session_id}")
 async def get_conversation_messages(project_id: int, session_id: str):

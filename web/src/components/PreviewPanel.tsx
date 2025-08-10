@@ -435,13 +435,13 @@ export const App = () => {
             </div>
 
             {/* Preview Content */}
-            <div className="flex-1 overflow-auto p-4 bg-muted/20">
-              <div className={cn("transition-all duration-300", getViewportClasses())}>
+            <div className="flex-1 overflow-hidden p-4 bg-muted/20">
+              <div className={cn("h-full transition-all duration-300", getViewportClasses())}>
                 {previewUrl ? (
-                  <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-border">
+                  <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-border h-full">
                     <iframe
                       src={previewUrl}
-                      className="w-full h-[600px]"
+                      className="w-full h-full"
                       title="App Preview"
                       onError={() => {
                         console.error('Failed to load preview iframe');
@@ -449,7 +449,7 @@ export const App = () => {
                     />
                   </div>
                 ) : (
-                  <Card className="text-center p-8">
+                  <Card className="text-center p-8 h-full flex items-center justify-center">
                     <CardContent className="space-y-4">
                       <Globe className="w-12 h-12 mx-auto text-muted-foreground" />
                       <div>
