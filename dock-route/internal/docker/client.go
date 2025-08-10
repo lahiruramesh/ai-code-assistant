@@ -77,10 +77,30 @@ func (c *Client) buildImage(ctx context.Context, config *config.DeployConfig) er
 	}
 	defer buildResponse.Body.Close()
 
-	// Stream build output
-	_, err = io.Copy(os.Stdout, buildResponse.Body)
-	if err != nil && err != io.EOF {
+	// Stream build output and check for errors
+	scanner := bufio.NewScanner(buildResponse.Body)
+	buildSuccess := true
+	var buildError string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Println(line)
+
+		// Check for error indicators in the build output
+		if strings.Contains(line, `"errorDetail"`) ||
+			strings.Contains(line, `"error"`) ||
+			strings.Contains(line, "returned a non-zero code") {
+			buildSuccess = false
+			buildError = line
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to read build output: %w", err)
+	}
+
+	if !buildSuccess {
+		return fmt.Errorf("docker build failed: %s", buildError)
 	}
 
 	log.Printf("Docker image '%s' built successfully.", config.ImageName)
@@ -353,202 +373,202 @@ func (c *Client) buildEnvVars(envMap map[string]string) []string {
 }
 
 func (c *Client) ExecuteCommand(ctx context.Context, containerName string, command []string, workingDir string, interactive bool) (int, error) {
-    // Find the container
-    containers, err := c.cli.ContainerList(ctx, container.ListOptions{
-        Filters: filters.NewArgs(filters.Arg("name", containerName)),
-    })
-    if err != nil {
-        return -1, fmt.Errorf("failed to list containers: %w", err)
-    }
-    
-    if len(containers) == 0 {
-        return -1, fmt.Errorf("container '%s' not found or not running", containerName)
-    }
-    
-    containerID := containers[0].ID
-    
-    // Create exec configuration
-    execConfig := container.ExecOptions{
-        Cmd:          command,
-        AttachStdout: true,
-        AttachStderr: true,
-        WorkingDir:   workingDir,
-    }
-    
-    if interactive {
-        execConfig.AttachStdin = true
-        execConfig.Tty = true
-    }
-    
-    // Create exec instance
-    execResp, err := c.cli.ContainerExecCreate(ctx, containerID, execConfig)
-    if err != nil {
-        return -1, fmt.Errorf("failed to create exec: %w", err)
-    }
-    
-    // Attach to exec
-    attachResp, err := c.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{
-        Tty: interactive,
-    })
-    if err != nil {
-        return -1, fmt.Errorf("failed to attach to exec: %w", err)
-    }
-    defer attachResp.Close()
-    
-    // Start the exec
-    if err := c.cli.ContainerExecStart(ctx, execResp.ID, container.ExecStartOptions{
-        Tty: interactive,
-    }); err != nil {
-        return -1, fmt.Errorf("failed to start exec: %w", err)
-    }
-    
-    // Handle output streaming
-    if interactive {
-        // For interactive mode, copy stdin/stdout directly
-        go func() {
-            io.Copy(attachResp.Conn, os.Stdin)
-        }()
-        io.Copy(os.Stdout, attachResp.Reader)
-    } else {
-        // For non-interactive, stream output with prefixes
-        c.streamOutput(attachResp.Reader)
-    }
-    
-    // Wait for completion and get exit code
-    inspectResp, err := c.cli.ContainerExecInspect(ctx, execResp.ID)
-    if err != nil {
-        return -1, fmt.Errorf("failed to inspect exec: %w", err)
-    }
-    
-    // Wait for exec to complete
-    for inspectResp.Running {
-        time.Sleep(100 * time.Millisecond)
-        inspectResp, err = c.cli.ContainerExecInspect(ctx, execResp.ID)
-        if err != nil {
-            return -1, fmt.Errorf("failed to inspect exec: %w", err)
-        }
-    }
-    
-    return inspectResp.ExitCode, nil
+	// Find the container
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", containerName)),
+	})
+	if err != nil {
+		return -1, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return -1, fmt.Errorf("container '%s' not found or not running", containerName)
+	}
+
+	containerID := containers[0].ID
+
+	// Create exec configuration
+	execConfig := container.ExecOptions{
+		Cmd:          command,
+		AttachStdout: true,
+		AttachStderr: true,
+		WorkingDir:   workingDir,
+	}
+
+	if interactive {
+		execConfig.AttachStdin = true
+		execConfig.Tty = true
+	}
+
+	// Create exec instance
+	execResp, err := c.cli.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return -1, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	// Attach to exec
+	attachResp, err := c.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{
+		Tty: interactive,
+	})
+	if err != nil {
+		return -1, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer attachResp.Close()
+
+	// Start the exec
+	if err := c.cli.ContainerExecStart(ctx, execResp.ID, container.ExecStartOptions{
+		Tty: interactive,
+	}); err != nil {
+		return -1, fmt.Errorf("failed to start exec: %w", err)
+	}
+
+	// Handle output streaming
+	if interactive {
+		// For interactive mode, copy stdin/stdout directly
+		go func() {
+			io.Copy(attachResp.Conn, os.Stdin)
+		}()
+		io.Copy(os.Stdout, attachResp.Reader)
+	} else {
+		// For non-interactive, stream output with prefixes
+		c.streamOutput(attachResp.Reader)
+	}
+
+	// Wait for completion and get exit code
+	inspectResp, err := c.cli.ContainerExecInspect(ctx, execResp.ID)
+	if err != nil {
+		return -1, fmt.Errorf("failed to inspect exec: %w", err)
+	}
+
+	// Wait for exec to complete
+	for inspectResp.Running {
+		time.Sleep(100 * time.Millisecond)
+		inspectResp, err = c.cli.ContainerExecInspect(ctx, execResp.ID)
+		if err != nil {
+			return -1, fmt.Errorf("failed to inspect exec: %w", err)
+		}
+	}
+
+	return inspectResp.ExitCode, nil
 }
 
 func (c *Client) streamOutput(reader io.Reader) {
-    scanner := bufio.NewScanner(reader)
-    for scanner.Scan() {
-        line := scanner.Text()
-        // Remove Docker's stream header if present
-        if len(line) > 8 {
-            fmt.Println(line)
-        } else if len(line) > 0 {
-            fmt.Println(line)
-        }
-    }
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Remove Docker's stream header if present
+		if len(line) > 8 {
+			fmt.Println(line)
+		} else if len(line) > 0 {
+			fmt.Println(line)
+		}
+	}
 }
 
 func (c *Client) SyncPackageFiles(ctx context.Context, containerName string, hostPath string) error {
-    containers, err := c.cli.ContainerList(ctx, container.ListOptions{
-        Filters: filters.NewArgs(filters.Arg("name", containerName)),
-    })
-    if err != nil {
-        return fmt.Errorf("failed to list containers: %w", err)
-    }
-    
-    if len(containers) == 0 {
-        return fmt.Errorf("container '%s' not found", containerName)
-    }
-    
-    containerID := containers[0].ID
-    
-    // Files to sync from container to host
-    packageFiles := []struct {
-        containerPath string
-        hostFileName  string
-        required      bool
-    }{
-        {"/app/package.json", "package.json", true},
-        {"/app/package-lock.json", "package-lock.json", false},
-        {"/app/yarn.lock", "yarn.lock", false},
-        {"/app/pnpm-lock.yaml", "pnpm-lock.yaml", false},
-    }
-    
-    syncedFiles := 0
-    
-    for _, file := range packageFiles {
-        hostFilePath := filepath.Join(hostPath, file.hostFileName)
-        
-        err := c.copyFileFromContainer(ctx, containerID, file.containerPath, hostFilePath)
-        if err != nil {
-            if file.required {
-                log.Printf("⚠️  Failed to sync required file %s: %v", file.hostFileName, err)
-            } else {
-                log.Printf("ℹ️  Optional file %s not found (this is normal)", file.hostFileName)
-            }
-        } else {
-            log.Printf("📄 Synced %s", file.hostFileName)
-            syncedFiles++
-        }
-    }
-    
-    if syncedFiles == 0 {
-        return fmt.Errorf("no package files were synced")
-    }
-    
-    return nil
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", containerName)),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return fmt.Errorf("container '%s' not found", containerName)
+	}
+
+	containerID := containers[0].ID
+
+	// Files to sync from container to host
+	packageFiles := []struct {
+		containerPath string
+		hostFileName  string
+		required      bool
+	}{
+		{"/app/package.json", "package.json", true},
+		{"/app/package-lock.json", "package-lock.json", false},
+		{"/app/yarn.lock", "yarn.lock", false},
+		{"/app/pnpm-lock.yaml", "pnpm-lock.yaml", false},
+	}
+
+	syncedFiles := 0
+
+	for _, file := range packageFiles {
+		hostFilePath := filepath.Join(hostPath, file.hostFileName)
+
+		err := c.copyFileFromContainer(ctx, containerID, file.containerPath, hostFilePath)
+		if err != nil {
+			if file.required {
+				log.Printf("⚠️  Failed to sync required file %s: %v", file.hostFileName, err)
+			} else {
+				log.Printf("ℹ️  Optional file %s not found (this is normal)", file.hostFileName)
+			}
+		} else {
+			log.Printf("📄 Synced %s", file.hostFileName)
+			syncedFiles++
+		}
+	}
+
+	if syncedFiles == 0 {
+		return fmt.Errorf("no package files were synced")
+	}
+
+	return nil
 }
 
 func (c *Client) copyFileFromContainer(ctx context.Context, containerID, srcPath, dstPath string) error {
-    reader, _, err := c.cli.CopyFromContainer(ctx, containerID, srcPath)
-    if err != nil {
-        return fmt.Errorf("failed to copy from container: %w", err)
-    }
-    defer reader.Close()
-    
-    // Extract file from tar archive
-    tr := tar.NewReader(reader)
-    for {
-        header, err := tr.Next()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
-            return fmt.Errorf("failed to read tar: %w", err)
-        }
-        
-        if header.Typeflag == tar.TypeReg {
-            // Create host file
-            outFile, err := os.Create(dstPath)
-            if err != nil {
-                return fmt.Errorf("failed to create host file: %w", err)
-            }
-            defer outFile.Close()
-            
-            // Copy content
-            _, err = io.Copy(outFile, tr)
-            if err != nil {
-                return fmt.Errorf("failed to write file content: %w", err)
-            }
-            
-            log.Printf("✅ Copied %s from container to %s", srcPath, dstPath)
-            return nil
-        }
-    }
-    
-    return fmt.Errorf("file not found in tar archive")
+	reader, _, err := c.cli.CopyFromContainer(ctx, containerID, srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to copy from container: %w", err)
+	}
+	defer reader.Close()
+
+	// Extract file from tar archive
+	tr := tar.NewReader(reader)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar: %w", err)
+		}
+
+		if header.Typeflag == tar.TypeReg {
+			// Create host file
+			outFile, err := os.Create(dstPath)
+			if err != nil {
+				return fmt.Errorf("failed to create host file: %w", err)
+			}
+			defer outFile.Close()
+
+			// Copy content
+			_, err = io.Copy(outFile, tr)
+			if err != nil {
+				return fmt.Errorf("failed to write file content: %w", err)
+			}
+
+			log.Printf("✅ Copied %s from container to %s", srcPath, dstPath)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("file not found in tar archive")
 }
 
 // Helper method to get container info (you might need this for other commands)
 func (c *Client) GetContainerInfo(ctx context.Context, containerName string) (*container.Summary, error) {
-    containers, err := c.cli.ContainerList(ctx, container.ListOptions{
-        All:     true,
-        Filters: filters.NewArgs(filters.Arg("name", containerName)),
-    })
-    if err != nil {
-        return nil, fmt.Errorf("failed to list containers: %w", err)
-    }
-    
-    if len(containers) == 0 {
-        return nil, fmt.Errorf("container '%s' not found", containerName)
-    }
-    
-    return &containers[0], nil
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", containerName)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return nil, fmt.Errorf("container '%s' not found", containerName)
+	}
+
+	return &containers[0], nil
 }

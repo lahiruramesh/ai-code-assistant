@@ -17,6 +17,8 @@ import {
   Home
 } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api/v1';
+
 interface ChatSession {
   id: string;
   project_id?: string;
@@ -45,36 +47,43 @@ export const ProjectSidebar = ({ currentChatId, onClose }: ProjectSidebarProps) 
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!dataLoaded) {
+      loadData();
+    }
+  }, [dataLoaded]);
 
   const loadData = async () => {
+    if (loading) return; // Prevent multiple simultaneous calls
+    
     try {
       setLoading(true);
       
-      // Load chat sessions
-      const chatResponse = await fetch('/api/v1/chat/sessions');
-      if (chatResponse.ok) {
-        const chatData = await chatResponse.json();
-        setChatSessions(chatData.sessions || []);
-      }
+      // Load chat sessions (this endpoint doesn't exist yet, so skip for now)
+      // const chatResponse = await fetch(`${API_BASE}/chat/sessions`);
+      // if (chatResponse.ok) {
+      //   const chatData = await chatResponse.json();
+      //   setChatSessions(chatData.sessions || []);
+      // }
 
-      // Load projects
-      const projectResponse = await fetch('/api/v1/projects');
+      // Load projects with trailing slash to avoid redirects
+      const projectResponse = await fetch(`${API_BASE}/projects/`);
       if (projectResponse.ok) {
         const projectData = await projectResponse.json();
         setProjects(projectData.projects || []);
+      } else {
+        console.warn('Failed to load projects:', projectResponse.status, projectResponse.statusText);
       }
+      
+      setDataLoaded(true);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleNewChat = () => {
+  };  const handleNewChat = () => {
     navigate('/');
     onClose?.();
   };

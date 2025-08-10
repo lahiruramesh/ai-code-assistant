@@ -8,8 +8,8 @@ RUN apk add --no-cache libc6-compat
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies)
-RUN npm ci
+# Install dependencies - use npm install if no lock file exists
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # Copy source code (this will be overridden by bind mount in dev mode)
 COPY . .

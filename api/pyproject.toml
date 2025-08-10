@@ -1,0 +1,22 @@
+[project]
+name = "api"
+version = "0.1.0"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+    "langchain",
+    "langchain_openai",
+    "websockets",
+    "aiofiles",
+    "duckdb",
+    "pydantic",
+    "uuid",
+    "datetime",
+    "sh"
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+]

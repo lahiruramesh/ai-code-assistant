@@ -30,7 +30,7 @@ interface WebSocketMessage {
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api/v1';
-const WS_URL = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8084/api/v1/chat/stream';
+const WS_BASE = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8084/api/v1/chat';
 
 interface ChatPanelProps {
   chatId?: string;
@@ -55,6 +55,11 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
   const [sessionId] = useState(() => `session_${Date.now()}`);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // Project-related state
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
+  const [projectUrl, setProjectUrl] = useState<string>('');
+  const [projectPath, setProjectPath] = useState<string>('');
 
   // Handler for model changes
   const handleModelChange = (provider: string, model: string) => {
@@ -66,9 +71,8 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize WebSocket connection
+  // Initialize WebSocket connection only when we have a project
   useEffect(() => {
-    connectWebSocket();
     fetchProviderInfo();
     
     return () => {
@@ -80,18 +84,18 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
 
   // Handle initial message from homepage
   useEffect(() => {
-    if (initialMessage && initialMessage.trim()) {
-      // Set the input and send it after WebSocket connects
+    if (initialMessage && initialMessage.trim() && !currentProjectId && !isProcessing) {
+      // Set the input and trigger project creation
       setInput(initialMessage);
       const timer = setTimeout(() => {
-        if (isConnected) {
-          handleSend();
+        if (!currentProjectId && !isProcessing) {
+          createNewProject(initialMessage);
         }
       }, 1000);
       
       return () => clearTimeout(timer);
     }
-  }, [initialMessage, isConnected]);
+  }, [initialMessage]); // Remove currentProjectId from deps to prevent infinite loop
 
   // Load existing chat if chatId is provided
   useEffect(() => {
@@ -132,12 +136,85 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
     }
   };
 
-  const connectWebSocket = () => {
+  const createNewProject = async (message: string) => {
+    // Prevent multiple simultaneous project creation attempts
+    if (isProcessing) {
+      console.log('Project creation already in progress, skipping...');
+      return;
+    }
+    
     try {
-      const ws = new WebSocket(WS_URL);
+      setIsProcessing(true);
+      addStatusMessage('Creating new project...', 'processing');
+      
+      const response = await fetch(`${API_BASE}/chat/create-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentProjectId(data.project_id);
+        setProjectUrl(data.url);
+        setProjectPath(data.project_path);
+        setCurrentSessionId(data.session_id);
+        
+        addStatusMessage(`Project "${data.project_name}" created successfully!`, 'completed');
+        
+        // Emit project events
+        eventManager.emit(EVENTS.PROJECT_BUILD_START, {
+          step: 'Project Setup',
+          progress: 0
+        });
+        
+        // Emit project data for other components with validation
+        if (data.project_id && data.project_name && data.project_path && data.url) {
+          eventManager.emit('PROJECT_CREATED', {
+            projectId: data.project_id,
+            projectName: data.project_name,
+            projectPath: data.project_path,
+            projectUrl: data.url
+          });
+        }
+        
+        // Connect WebSocket to the new project
+        connectWebSocket(data.project_id);
+        
+        // Send the initial message
+        setTimeout(() => {
+          handleSend();
+        }, 1000);
+      } else {
+        const errorData = await response.json();
+        addStatusMessage(`Failed to create project: ${errorData.error || 'Unknown error'}`, 'error');
+      }
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      addStatusMessage('Failed to create project - check if backend server is running', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const connectWebSocket = (projectId?: number) => {
+    if (!projectId && !currentProjectId) {
+      console.log('No project ID available for WebSocket connection');
+      return;
+    }
+
+    const targetProjectId = projectId || currentProjectId;
+    const wsUrl = `${WS_BASE}/stream/${targetProjectId}`;
+    
+    try {
+      const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected to project', targetProjectId);
         setIsConnected(true);
         addStatusMessage('Connected to AI multi-agent system', 'connection');
       };
@@ -284,7 +361,21 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
   };
 
   const handleSend = () => {
-    if (!input.trim() || !isConnected || isProcessing) return;
+    if (!input.trim() || isProcessing) return;
+
+    // If we don't have a project yet, create one first
+    if (!currentProjectId) {
+      createNewProject(input);
+      return;
+    }
+
+    // If we don't have a WebSocket connection, try to connect
+    if (!isConnected) {
+      connectWebSocket();
+      // Don't automatically retry sending - let user manually retry
+      addStatusMessage('Please try sending your message again once connected', 'info');
+      return;
+    }
 
     // Add user message
     addMessage(input, 'user');
@@ -293,14 +384,13 @@ export const ChatPanel = ({ chatId, initialMessage }: ChatPanelProps) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       const message = {
         message: input,
-        session_id: sessionId,
+        session_id: currentSessionId || sessionId,
         timestamp: new Date().toISOString()
       };
       
       wsRef.current.send(JSON.stringify(message));
       setIsTyping(true);
       setIsProcessing(true);
-      setCurrentSessionId(sessionId);
       
       // Emit build start event to switch to preview mode
       eventManager.emit(EVENTS.PROJECT_BUILD_START);

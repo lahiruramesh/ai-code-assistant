@@ -115,7 +115,16 @@ export const App = () => {
 
   // Fetch projects on component mount and setup event listeners
   useEffect(() => {
-    fetchProjects();
+    // Only fetch projects once on mount, not continuously
+    let mounted = true;
+    
+    const initializeComponent = async () => {
+      if (mounted) {
+        await fetchProjects();
+      }
+    };
+    
+    initializeComponent();
     
     // Configure sound service
     soundService.setEnabled(soundEnabled);
@@ -169,13 +178,33 @@ export const App = () => {
       }, 2000);
     });
 
+    // Subscribe to project creation events
+    const unsubscribeProjectCreated = eventManager.on('PROJECT_CREATED', (data) => {
+      console.log('Project created:', data);
+      
+      // Validate data before using it
+      if (data && data.projectUrl && data.projectPath && data.projectName) {
+        setPreviewUrl(data.projectUrl);
+        setProjectPath(data.projectPath);
+        setActiveProject({
+          name: data.projectName,
+          status: 'running',
+          port: parseInt(data.projectUrl.split(':').pop() || '3000')
+        });
+      } else {
+        console.warn('PROJECT_CREATED event received with incomplete data:', data);
+      }
+    });
+
     // Cleanup event listeners
     return () => {
+      mounted = false;
       unsubscribeBuildStart();
       unsubscribeBuildProgress();
       unsubscribeBuildComplete();
+      unsubscribeProjectCreated();
     };
-  }, [soundEnabled, activeProject, completedSteps, currentBuildStep]);
+  }, [soundEnabled]); // Remove dependencies that cause re-renders
 
   const getPreviousStep = (currentStep: string): string | null => {
     const stepIndex = totalBuildSteps.indexOf(currentStep);
@@ -184,13 +213,13 @@ export const App = () => {
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch(`${API_BASE}/projects`);
+      const response = await fetch(`${API_BASE}/projects/`);
       const data = await response.json();
       setProjects(data.projects || []);
       
       if (data.projects && data.projects.length > 0) {
         setActiveProject(data.projects[0]);
-        await fetchProjectPreview(data.projects[0].name);
+        //await fetchProjectPreview(data.projects[0].name);
       }
     } catch (error) {
       console.error('Failed to fetch projects:', error);
