@@ -3,7 +3,7 @@ import uuid
 import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.agents.react_agent import ReActAgent
-from ..config import PROJECTS_DIR
+from ..config import PROJECTS_DIR, MODEL_NAME
 from app.database.service import db_service
 from app.database.models import (
     ConversationMessageCreate, TokenUsageCreate, ProjectCreate, ChatRequest
@@ -45,7 +45,7 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
             payload = json.loads(data)
             
             message = payload.get("message", "")
-            model = payload.get("model", "gpt-4")
+            model = payload.get("model", MODEL_NAME)
             provider = payload.get("provider", "openai")
             
             # Store user message
@@ -66,23 +66,21 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
             enhanced_message = message
             if chat_summary:
                 enhanced_message = f"""Previous conversation context:
-{chat_summary}
-
-Current user request: {message}
-
-Please consider the previous conversation context when responding to the current request."""
-            
-            # Send acknowledgment
-            await websocket.send_json({
-                "type": "message_received",
-                "content": message,
-                "session_id": session_id
-            })
-            
-            # Stream agent response
-            full_response = ""
-            input_tokens = 0
-            output_tokens = 0
+                                    {chat_summary}
+                                    Current user request: {message}
+                                    Please consider the previous conversation context when responding to the current request."""
+                
+                # Send acknowledgment
+                await websocket.send_json({
+                    "type": "message_received",
+                    "content": message,
+                    "session_id": session_id
+                })
+                
+                # Stream agent response
+                full_response = ""
+                input_tokens = 0
+                output_tokens = 0
             
             await websocket.send_json({
                 "type": "status",

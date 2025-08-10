@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { 
   Folder, 
   FolderOpen, 
   FileText, 
   ChevronRight, 
   ChevronDown,
-  Plus,
-  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -174,20 +171,7 @@ export const FileExplorer = ({ activeFile, onFileSelect, projectName }: FileExpl
             <Folder className="w-4 h-4 text-primary" />
             Explorer
           </h3>
-          <div className="flex gap-1">
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-              <Plus className="w-3 h-3" />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-              <Search className="w-3 h-3" />
-            </Button>
-          </div>
         </div>
-        {projectName && (
-          <Badge variant="outline" className="text-xs">
-            /tmp/aiagent/{projectName}
-          </Badge>
-        )}
       </div>
 
       {/* File Tree */}

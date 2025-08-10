@@ -3,14 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import {
-  MessageSquare,
   Plus,
   Search,
   Settings,
-  Calendar,
   FolderOpen,
   Sparkles,
   X,
@@ -18,15 +15,6 @@ import {
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api/v1';
-
-interface ChatSession {
-  id: string;
-  project_id?: string;
-  created_at: string;
-  last_activity: string;
-  message_count: number;
-  title?: string;
-}
 
 interface Project {
   id: string;
@@ -39,13 +27,11 @@ interface Project {
 
 interface ProjectSidebarProps {
   currentProjectId?: string | null;
-  currentChatId?: string;
   onClose?: () => void;
 }
 
-export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: ProjectSidebarProps) => {
+export const ProjectSidebar = ({ currentProjectId, onClose }: ProjectSidebarProps) => {
   const navigate = useNavigate();
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -58,20 +44,11 @@ export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: Pro
   }, [dataLoaded]);
 
   const loadData = async () => {
-    if (loading) return; // Prevent multiple simultaneous calls
-    
     try {
       setLoading(true);
       
-      // Load chat sessions (this endpoint doesn't exist yet, so skip for now)
-      // const chatResponse = await fetch(`${API_BASE}/chat/sessions`);
-      // if (chatResponse.ok) {
-      //   const chatData = await chatResponse.json();
-      //   setChatSessions(chatData.sessions || []);
-      // }
-
       // Load projects with trailing slash to avoid redirects
-      const projectResponse = await fetch(`${API_BASE}/projects/`);
+      const projectResponse = await fetch(`${API_BASE}/projects`);
       if (projectResponse.ok) {
         const projectData = await projectResponse.json();
         setProjects(projectData.projects || []);
@@ -85,14 +62,6 @@ export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: Pro
     } finally {
       setLoading(false);
     }
-  };  const handleNewChat = () => {
-    navigate('/');
-    onClose?.();
-  };
-
-  const handleChatSelect = (chatId: string) => {
-    navigate(`/chat/${chatId}`);
-    onClose?.();
   };
 
   const handleProjectSelect = (project: Project) => {
@@ -100,23 +69,6 @@ export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: Pro
     onClose?.();
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
-  const filteredSessions = chatSessions.filter(session =>
-    session.id.includes(searchQuery) ||
-    (session.title && session.title.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
 
   const filteredProjects = projects.filter(project =>
     project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -132,7 +84,7 @@ export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: Pro
             <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
-            <span className="font-bold text-lg">React Builder</span>
+            <span className="font-bold text-lg">AI App Builder</span>
           </div>
           {onClose && (
             <Button variant="ghost" size="sm" onClick={onClose} className="lg:hidden">
@@ -142,14 +94,6 @@ export const ProjectSidebar = ({ currentProjectId, currentChatId, onClose }: Pro
         </div>
         
         <div className="space-y-2 mt-4">
-          <Button 
-            onClick={handleNewChat}
-            className="w-full justify-start"
-            variant="default"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Project
-          </Button>
           
           <Button 
             onClick={() => navigate('/')}

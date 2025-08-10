@@ -552,18 +552,6 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
     }
   }, [messages]);
 
-  // const quickActions = [
-  //   { label: 'React todo app with auth', icon: Code2 },
-  //   { label: 'Dashboard with file upload', icon: Palette },
-  //   { label: 'E-commerce landing page', icon: Sparkles },
-  // ];
-
-  const handleQuickAction = (label: string) => {
-    setInput(label);
-    // Auto-send after a brief delay
-    setTimeout(() => handleSend(), 100);
-  };
-
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Chat Header - Fixed */}
@@ -571,7 +559,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Bot className="w-5 h-5 text-primary" />
-            <h2 className="font-semibold text-lg">AI Multi-Agent System</h2>
+            <h2 className="font-semibold text-lg">Chat with AI</h2>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={isConnected ? "default" : "destructive"} className="text-xs">
@@ -617,28 +605,6 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
           </CollapsibleContent>
         </Collapsible>
       </div>
-
-      {/* Quick Actions */}
-      {/* <div className="flex-shrink-0 p-4 space-y-2">
-        <p className="text-xs text-muted-foreground font-medium">Quick Actions</p>
-        <div className="flex flex-wrap gap-2">
-          {quickActions.map((action, index) => {
-            const IconComponent = action.icon;
-            return (
-              <Button
-                key={index}
-                variant="outline"
-                size="sm"
-                className="text-xs h-8"
-                onClick={() => handleQuickAction(action.label)}
-              >
-                <IconComponent className="w-3 h-3 mr-1" />
-                {action.label}
-              </Button>
-            );
-          })}
-        </div>
-      </div> */}
 
       {/* Messages - Scrollable */}
       <div className="flex-1 overflow-hidden flex flex-col">

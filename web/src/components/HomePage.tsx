@@ -12,7 +12,6 @@ import {
   Palette, 
   Database,
   ArrowRight,
-  Github,
   Heart
 } from 'lucide-react';
 
@@ -131,13 +130,12 @@ export const HomePage = () => {
               <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
                 <Sparkles className="h-4 w-4 text-white" />
               </div>
-              <span className="font-bold text-xl">React Builder</span>
+              <span className="font-bold text-xl">AI App Builder</span>
             </div>
           </div>
           <div className="flex items-center space-x-4">
             <Button variant="ghost" size="sm">
-              <Github className="h-4 w-4 mr-2" />
-              GitHub
+              Login
             </Button>
           </div>
         </div>
@@ -153,11 +151,8 @@ export const HomePage = () => {
               AI-Powered Development
             </div>
             <h1 className="text-4xl font-bold tracking-tight sm:text-6xl bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-              Build React Apps with AI
+              Build Modern Apps with AI
             </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Describe your idea and watch as AI generates a complete React application with modern UI components, routing, and functionality.
-            </p>
           </div>
         </div>
 
@@ -182,7 +177,7 @@ export const HomePage = () => {
                       placeholder="Describe the React app you want to build..."
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
+                      onKeyUp={(e) => e.key === 'Enter' && handleSubmit()}
                       className="flex-1 text-base"
                     />
                     <Button 
@@ -253,7 +248,7 @@ export const HomePage = () => {
 
         {/* Features Section */}
         <div className="mt-16 text-center space-y-6">
-          <h2 className="text-2xl font-semibold">Why Choose React Builder?</h2>
+          <h2 className="text-2xl font-semibold">Why Choose AI App Builder?</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8">
             <div className="space-y-2">
               <div className="mx-auto w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">

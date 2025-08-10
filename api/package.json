@@ -10,18 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@radix-ui/react-avatar": "^1.1.10",
-    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-checkbox": "^1.3.2",
     "@radix-ui/react-slot": "^1.2.3",
-    "@radix-ui/react-tabs": "^1.1.12",
     "@tailwindcss/vite": "^4.1.11",
-    "@tremor/react": "^3.18.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.23.12",
     "lucide-react": "^0.539.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "recharts": "2.15.4",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11"
   },

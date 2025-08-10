@@ -88,15 +88,7 @@ async def get_project(project_id: str):
 async def get_project_preview(project_name: str):
     """Get project preview URL by project name or ID"""
     # Try to find project by name first
-    project = db_service.get_project_by_name(project_name)
-    if not project:
-        # If not found by name, try by ID if it's numeric
-        try:
-            project_id = int(project_name)
-            project = db_service.get_project_by_id(project_id)
-        except ValueError:
-            pass
-    
+    project = db_service.get_project_by_name(project_name)    
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     

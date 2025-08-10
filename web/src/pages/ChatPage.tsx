@@ -57,7 +57,7 @@ export const ChatPage = () => {
         eventManager.emit('PROJECT_CREATED', {
           projectId: data.id,
           projectName: data.name,
-          projectPath: data.name, // Assuming project path is based on name
+          projectPath: data.name,
           projectUrl: data.url || `http://localhost:${data.port}`
         });
         
@@ -97,7 +97,6 @@ export const ChatPage = () => {
         }`}>
           <ProjectSidebar 
             currentProjectId={currentProjectId}
-            currentChatId={chatId} 
             onClose={() => setSidebarOpen(false)}
           />
         </div>
@@ -164,7 +163,7 @@ export const ChatPage = () => {
               <ResizableHandle className="bg-border hover:bg-primary/20 transition-colors duration-200 w-1" />
               
               <ResizablePanel defaultSize={60} minSize={40} maxSize={100}>
-                <PreviewPanel mode={mode} onModeChange={setMode} />
+                <PreviewPanel mode={mode} onModeChange={setMode} projectId={currentProjectId} />
               </ResizablePanel>
             </ResizablePanelGroup>
           )}

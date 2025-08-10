@@ -16,7 +16,7 @@ export const CodeEditor = ({ activeFile, content, onContentChange }: CodeEditorP
   const { theme } = useTheme();
 
   const getLanguage = (filename: string): string => {
-    const ext = filename.split('.').pop()?.toLowerCase();
+    const ext = filename?.split('.').pop()?.toLowerCase();
     switch (ext) {
       case 'tsx':
       case 'ts':
