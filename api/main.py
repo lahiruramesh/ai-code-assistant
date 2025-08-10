@@ -1,12 +1,12 @@
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import streaming, projects
+from app.api import streaming, projects, auth, github, vercel
 from app.database.connection import db
 from app.database.service import db_service
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.config import (
+    WEB_URL
+)
 
 # Create the projects directory if it doesn't exist
 if not os.path.exists("./projects"):
@@ -17,15 +17,18 @@ if not os.path.exists("./data"):
     os.makedirs("./data")
 
 app = FastAPI(
-    title="LangChain ReAct Agent Backend with DuckDB",
-    description="A streaming backend for a LangChain agent with tool-calling capabilities and persistent storage.",
-    version="0.2.0",
+    title="Code Editing Agent Backend with Authentication & Integrations",
+    description="A streaming backend for a LangChain agent with authentication, GitHub, and Vercel integrations.",
+    version="0.3.0",
 )
 
 # Configure CORS to allow the frontend to connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:8080", 
+        WEB_URL
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +37,9 @@ app.add_middleware(
 # Include API routers
 app.include_router(streaming.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"])
+app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(github.router, prefix="/api/v1", tags=["GitHub Integration"])
+app.include_router(vercel.router, prefix="/api/v1", tags=["Vercel Integration"])
 
 @app.get("/api/v1/models")
 def get_models():
@@ -79,14 +85,18 @@ def cancel_chat_session(session_id: str):
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to the LangChain ReAct Agent Backend",
-        "version": "0.2.0",
+        "message": "Welcome to the Code Editing Agent Backend",
+        "version": "0.3.0",
         "features": [
             "DuckDB Integration",
-            "Project-aware Chat Sessions",
+            "Project-aware Chat Sessions", 
             "WebSocket Streaming",
             "Token Usage Tracking",
-            "Conversation History"
+            "Conversation History",
+            "Google OAuth Authentication",
+            "GitHub Integration",
+            "Vercel Deployment",
+            "Repository Management"
         ]
     }
 

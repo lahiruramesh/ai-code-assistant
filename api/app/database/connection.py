@@ -26,6 +26,16 @@ class DatabaseConnection:
     def get_connection(self) -> duckdb.DuckDBPyConnection:
         return self._connection
     
+    def reconnect(self) -> duckdb.DuckDBPyConnection:
+        """Force reconnection to database"""
+        try:
+            if self._connection:
+                self._connection.close()
+        except:
+            pass
+        self._connection = self._connect_with_recovery()
+        return self._connection
+    
     def _init_tables(self, reset: bool = False):
         """Initialize all database tables.
         If reset=True, drop-and-recreate tables; otherwise, create if not exists.

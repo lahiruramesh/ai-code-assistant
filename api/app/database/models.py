@@ -22,6 +22,32 @@ if PYDANTIC_AVAILABLE:
         template: str
         docker_container: Optional[str] = None
         port: Optional[int] = None
+        message: str = ""
+        
+    class UserCreate(BaseModel):
+        email: str
+        name: str
+        avatar_url: Optional[str] = None
+        google_id: Optional[str] = None
+        
+    class GitHubConnection(BaseModel):
+        github_username: str
+        github_token: str
+        
+    class VercelConnection(BaseModel):
+        vercel_token: str
+        vercel_team_id: Optional[str] = None
+        
+    class GitHubRepoCreate(BaseModel):
+        name: str
+        description: Optional[str] = None
+        private: bool = True
+        
+    class VercelDeployment(BaseModel):
+        name: str
+        github_repo: str
+        branch: str = "main"
+        
 else:
     # Fallback classes without Pydantic
     class ChatRequest:
@@ -35,23 +61,78 @@ else:
             self.provider = provider
     
     class ProjectCreate:
-        def __init__(self, name: str, template: str, docker_container: Optional[str] = None, port: Optional[int] = None):
+        def __init__(self, name: str, template: str, docker_container: Optional[str] = None, port: Optional[int] = None, message: str = ""):
             self.name = name
             self.template = template
             self.docker_container = docker_container
+            self.message = message
             self.port = port
+            
+    class UserCreate:
+        def __init__(self, email: str, name: str, avatar_url: Optional[str] = None, google_id: Optional[str] = None):
+            self.email = email
+            self.name = name
+            self.avatar_url = avatar_url
+            self.google_id = google_id
 
 # Regular classes for internal use
+class User:
+    def __init__(self, id: str, email: str, name: str, avatar_url: Optional[str] = None,
+                 google_id: Optional[str] = None, github_username: Optional[str] = None,
+                 github_token: Optional[str] = None, vercel_token: Optional[str] = None,
+                 vercel_team_id: Optional[str] = None, created_at: datetime = None,
+                 updated_at: datetime = None):
+        self.id = id
+        self.email = email
+        self.name = name
+        self.avatar_url = avatar_url
+        self.google_id = google_id
+        self.github_username = github_username
+        self.github_token = github_token
+        self.vercel_token = vercel_token
+        self.vercel_team_id = vercel_team_id
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+class GitHubRepository:
+    def __init__(self, id: str, user_id: str, project_id: str, repo_name: str,
+                 repo_url: str, clone_url: str, created_at: datetime = None):
+        self.id = id
+        self.user_id = user_id
+        self.project_id = project_id
+        self.repo_name = repo_name
+        self.repo_url = repo_url
+        self.clone_url = clone_url
+        self.created_at = created_at
+
+class VercelDeploymentRecord:
+    def __init__(self, id: str, user_id: str, project_id: str, deployment_id: str,
+                 deployment_url: str, status: str, created_at: datetime = None,
+                 updated_at: datetime = None):
+        self.id = id
+        self.user_id = user_id
+        self.project_id = project_id
+        self.deployment_id = deployment_id
+        self.deployment_url = deployment_url
+        self.status = status
+        self.created_at = created_at
+        self.updated_at = updated_at
+
 class Project:
-    def __init__(self, id: str, name: str, template: str, docker_container: Optional[str] = None, 
-                 port: Optional[int] = None, status: str = "created", created_at: datetime = None, 
+    def __init__(self, id: str, name: str, template: str, user_id: Optional[str] = None,
+                 docker_container: Optional[str] = None, port: Optional[int] = None, 
+                 status: str = "created", github_repo_id: Optional[str] = None,
+                 vercel_deployment_id: Optional[str] = None, created_at: datetime = None, 
                  updated_at: datetime = None):
         self.id = id
         self.name = name
         self.template = template
+        self.user_id = user_id
         self.docker_container = docker_container
         self.port = port
         self.status = status
+        self.github_repo_id = github_repo_id
+        self.vercel_deployment_id = vercel_deployment_id
         self.created_at = created_at
         self.updated_at = updated_at
 

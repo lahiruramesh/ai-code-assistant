@@ -2,13 +2,18 @@ import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from app.database.service import db_service
-from app.database.models import ProjectCreate
-from ..config import PROJECTS_DIR
-from ..utils.docker_route import ensure_container_running, get_container_status_for_project
+from ..config import PROJECTS_DIR, MODEL_NAME
+from ..utils.docker_route import ensure_container_running, get_container_status_for_project, delete_project_and_cleanup
+import random
+from app.utils.docker_route import deploy_app
+from app.database.models import (
+    ConversationMessageCreate,
+    ProjectCreate,
+)
 
 router = APIRouter()
 
-@router.get("/")
+@router.get("")
 async def get_projects():
     """Get all projects from database"""
     projects = db_service.get_all_projects()
@@ -33,19 +38,83 @@ async def get_projects():
 async def create_project(project_data: ProjectCreate):
     """Create a new project"""
     try:
-        db_service.create_project(project_data)
+        fancy_name = db_service.generate_fancy_project_name(project_data.message)
+        project_data.name = fancy_name
+        project = db_service.create_project(project_data)
+        
+        # Check port availability
+        # TODO: Implement a more robust port checking mechanism
+        port = random.randint(8084, 9999)
+        try:
+            deploy_result = deploy_app("react-shadcn-template", fancy_name, fancy_name.lower(), int(port))
+        except Exception as e:
+            return {
+                "error": str(e)
+            }
+        container_name = deploy_result.get("container_name")
+        project.docker_container = container_name
+        project.name = fancy_name
+        project.port = port
+        project.status = "created"
+        db_service.update_project(project.id, project)
+        
+        user_message = ConversationMessageCreate(
+            project_id=project.id,
+            role="user",
+            content=project_data.message,
+            message_type="chat",
+            model=MODEL_NAME,
+            provider="openrouter"
+        )
+        db_service.create_conversation_message(user_message)
         return JSONResponse(content={
             "message": "Project created successfully",
-            "project": {
-                "name": project_data.name,
-                "template": project_data.template,
-                "docker_container": project_data.docker_container,
-                "port": project_data.port
-            }
+            "id": project.id,
+            "name": project.name,
+            "template": project.template,
+            "docker_container": project.docker_container,
+            "port": project.port
         }, status_code=201)
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/{project_id}")
+async def delete_project(project_id: str):
+    """Delete a project and cleanup all associated resources"""
+    try:
+        # Get project details before deletion
+        project = db_service.get_project_by_id(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Cleanup Docker container, image and project files
+        cleanup_result = {"container_removed": False, "image_removed": False, "files_removed": False, "errors": []}
+        
+        if project.docker_container or project.name:
+            project_path = os.path.join(PROJECTS_DIR, project.name) if project.name else None
+            
+            try:
+                cleanup_result = delete_project_and_cleanup(
+                    container_name=project.docker_container,
+                    project_path=project_path
+                )
+            except Exception as e:
+                cleanup_result["errors"].append(f"Cleanup failed: {str(e)}")
+        
+        # Delete project from database
+        db_service.delete_project(project_id)
+        
+        return JSONResponse(content={
+            "message": "Project deleted successfully",
+            "project_id": project_id,
+            "cleanup_result": cleanup_result
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{project_id}")
 async def get_project(project_id: str):

@@ -9,6 +9,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useProjectFiles } from '@/hooks';
 
 interface FileNode {
   name: string;
@@ -29,38 +30,19 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api
 
 export const FileExplorer = ({ activeFile, onFileSelect, projectName }: FileExplorerProps) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  
+  const { data: filesData, isLoading, error } = useProjectFiles(projectName);
 
-  // Load project files
+  // Update file tree when data changes
   useEffect(() => {
-    if (!projectName) return;
-    
-    const fetchFiles = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        // Updated to use the new aiagent path
-        const response = await fetch(`${API_BASE}/projects/${projectName}/files?source=aiagent`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch files: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        setFileTree(data.files || []);
-      } catch (err) {
-        console.error('Failed to fetch files:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch files');
-        // Fallback to mock data if API fails
-        setFileTree(getMockFileTree());
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchFiles();
-  }, [projectName]);
+    if (filesData?.files) {
+      setFileTree(filesData.files);
+    } else if (error) {
+      console.error('Failed to fetch files:', error);
+      // Fallback to mock data if API fails
+      setFileTree(getMockFileTree());
+    }
+  }, [filesData, error]);
 
   // Mock data fallback
   const getMockFileTree = (): FileNode[] => [
@@ -177,7 +159,18 @@ export const FileExplorer = ({ activeFile, onFileSelect, projectName }: FileExpl
       {/* File Tree */}
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-0.5">
-          {fileTree.map(node => renderFileNode(node))}
+          {isLoading ? (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+              <p className="text-sm text-muted-foreground mt-2">Loading files...</p>
+            </div>
+          ) : fileTree.length > 0 ? (
+            fileTree.map(node => renderFileNode(node))
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-sm text-muted-foreground">No files found</p>
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>

@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Brain, Cpu, Settings, Zap } from "lucide-react";
+import { useModels } from '@/hooks';
 
 interface ModelSelectorProps {
   onModelChange: (provider: string, model: string, autoMode: boolean) => void;
@@ -37,11 +38,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const [selectedModel, setSelectedModel] = useState(currentModel);
   const [isAutoMode, setIsAutoMode] = useState(autoMode);
   const [allModels, setAllModels] = useState<ModelGroup>({});
-  const [loading, setLoading] = useState(false);
+
+  const { data: modelsData, isLoading: loading, error: modelsError } = useModels();
 
   useEffect(() => {
-    fetchAllModels();
-  }, []);
+    if (modelsData?.models) {
+      setAllModels(modelsData.models);
+    } else if (modelsError) {
+      // Fallback to environment variables if API fails
+      setAllModels(getModelsFromEnv());
+    }
+  }, [modelsData, modelsError]);
 
   const getModelsFromEnv = (): ModelGroup => {
     return {
@@ -61,21 +68,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         aws: (import.meta.env.VITE_BEDROCK_MODELS || "").split(",").filter(Boolean)
       }
     };
-  };
-
-  const fetchAllModels = async () => {
-    try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/models/all`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setAllModels(data.models || {});
-    } catch (error) {
-      console.error('Failed to fetch models:', error);
-      // Fallback to environment variables if API fails
-      setAllModels(getModelsFromEnv());
-    }
   };
 
   const handleProviderChange = (provider: string) => {

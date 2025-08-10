@@ -1,20 +1,50 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect, memo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { 
+  FolderPlus, 
+  MessageSquare, 
+  LogOut, 
+  ChevronRight,
+  Github,
+  ExternalLink,
+  Folder,
+  Zap,
   Plus,
-  Search,
-  Settings,
-  FolderOpen,
-  Sparkles,
-  X,
-  Home
-} from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api/v1';
+  MoreHorizontal,
+  Trash2
+} from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
+import { Badge } from './ui/badge'
+import { Button } from './ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { useAuth } from './AuthProvider'
+import { NewProjectModal } from './NewProjectModal'
+import { DeleteProjectDialog } from './DeleteProjectDialog'
+import { useProjects } from '@/hooks/useProjects'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import type { Project as ProjectType } from '@/types'
 
 interface Project {
   id: string;
@@ -22,157 +52,240 @@ interface Project {
   template: string;
   status: string;
   created_at: string;
-  url?: string;
+  docker_container?: string;
+  port?: number;
 }
 
 interface ProjectSidebarProps {
-  currentProjectId?: string | null;
-  onClose?: () => void;
+  currentProjectId: string | null;
 }
 
-export const ProjectSidebar = ({ currentProjectId, onClose }: ProjectSidebarProps) => {
+export const ProjectSidebar: React.FC<ProjectSidebarProps> = memo(({ 
+  currentProjectId,
+}) => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  const location = useLocation();
+  const { user, logout } = useAuth();
+  const { projects, isLoading, refetch, deleteProject } = useProjects();
+  const [isProjectsOpen, setIsProjectsOpen] = useState(true);
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectType | null>(null);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
 
-  useEffect(() => {
-    if (!dataLoaded) {
-      loadData();
-    }
-  }, [dataLoaded]);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load projects with trailing slash to avoid redirects
-      const projectResponse = await fetch(`${API_BASE}/projects`);
-      if (projectResponse.ok) {
-        const projectData = await projectResponse.json();
-        setProjects(projectData.projects || []);
-      } else {
-        console.warn('Failed to load projects:', projectResponse.status, projectResponse.statusText);
-      }
-      
-      setDataLoaded(true);
-    } catch (error) {
-      console.error('Failed to load data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleProjectSelect = (project: Project) => {
+  const handleProjectClick = (project: Project) => {
     navigate(`/projects/${project.id}`);
-    onClose?.();
   };
 
+  const handleNewProject = () => {
+    setIsNewProjectModalOpen(true);
+  };
 
-  const filteredProjects = projects.filter(project =>
-    project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    project.template.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleProjectCreated = (projectId: string) => {
+    refetch();
+    navigate(`/projects/${projectId}`);
+  };
+
+  const handleDeleteProject = (project: ProjectType) => {
+    setProjectToDelete(project);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async (projectId: string) => {
+    setIsDeletingProject(true);
+    try {
+      await deleteProject(projectId);
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
+      // Navigate away if we deleted the current project
+      if (currentProjectId === projectId) {
+        navigate('/');
+      }
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
+
+  const handleCloseDeleteDialog = () => {
+    if (!isDeletingProject) {
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   return (
-    <div className="w-80 h-full border-r bg-background flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-bold text-lg">AI App Builder</span>
-          </div>
-          {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose} className="lg:hidden">
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-        
-        <div className="space-y-2 mt-4">
-          
-          <Button 
-            onClick={() => navigate('/')}
-            className="w-full justify-start"
-            variant="ghost"
-          >
-            <Home className="h-4 w-4 mr-2" />
-            Home
-          </Button>
-        </div>
-        
-        <div className="relative mt-4">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search projects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
+    <>
+      <Sidebar className="border-r">
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Quick Actions</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton onClick={handleNewProject}>
+                    <Plus className="w-4 h-4" />
+                    New Project
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
 
-      {/* Content */}
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-4">
+          <SidebarGroup>
+            <Collapsible open={isProjectsOpen} onOpenChange={setIsProjectsOpen}>
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="flex items-center justify-between w-full">
+                  <span>Projects ({projects.length})</span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${isProjectsOpen ? 'transform rotate-90' : ''}`} />
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {isLoading && projects.length == 0 ? (
+                      <SidebarMenuItem>
+                        <div className="p-2 text-sm text-muted-foreground">Loading projects...</div>
+                      </SidebarMenuItem>
+                    ) : !Array.isArray(projects) || projects.length === 0 ? (
+                      <SidebarMenuItem>
+                        <div className="p-2 text-sm text-muted-foreground">No projects yet</div>
+                      </SidebarMenuItem>
+                    ) : (
+                      projects.map((project) => (
+                        <SidebarMenuItem key={project.id}>
+                          <div className="flex items-center w-full group">
+                            <SidebarMenuButton
+                              onClick={() => handleProjectClick(project)}
+                              isActive={currentProjectId === project.id}
+                              className="flex flex-col items-start gap-1 h-auto p-3 flex-1"
+                            >
+                              <div className="flex flex-col items-start justify-between w-full">
+                                <div className="flex items-center gap-2">
+                                  <Folder className="w-4 h-4" />
+                                  <span className="font-medium truncate">{project.name}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between w-full text-xs text-muted-foreground">
+                                <span>{project.template}</span>
+                                <span>{formatDate(project.created_at)}</span>
+                              </div>
+                              {project.port && (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <ExternalLink className="w-3 h-3" />
+                                  <span>localhost:{project.port}</span>
+                                </div>
+                              )}
+                            </SidebarMenuButton>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8 p-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteProject(project)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete Project
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </SidebarMenuItem>
+                      ))
+                    )}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
 
-
-          {/* Projects */}
-          <div>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Projects
-            </h3>
-            {loading ? (
-              <div className="text-sm text-muted-foreground">Loading...</div>
-            ) : filteredProjects.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No projects yet</div>
-            ) : (
-              <div className="space-y-1">
-                {filteredProjects.map((project) => (
-                  <Button
-                    key={project.id}
-                    variant={project.id === currentProjectId ? "secondary" : "ghost"}
-                    className="w-full justify-start h-auto p-3"
-                    onClick={() => handleProjectSelect(project)}
-                  >
-                    <FolderOpen className="h-4 w-4 mr-3 flex-shrink-0" />
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="truncate text-sm font-medium">
-                        {project.name}
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{project.template}</span>
-                        <Badge 
-                          variant={project.status === 'active' ? 'default' : 'secondary'}
-                          className="text-xs"
-                        >
-                          {project.status}
+          {user?.github_connected && (
+            <SidebarGroup>
+              <SidebarGroupLabel>Integrations</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton>
+                      <Github className="w-4 h-4" />
+                      <span>GitHub</span>
+                      <Badge variant="secondary" className="text-green-700 bg-green-100 ml-auto">
+                        Connected
+                      </Badge>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  {user?.vercel_connected && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton>
+                        <Zap className="w-4 h-4" />
+                        <span>Vercel</span>
+                        <Badge variant="secondary" className="text-green-700 bg-green-100 ml-auto">
+                          Connected
                         </Badge>
-                      </div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </ScrollArea>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+        </SidebarContent>
 
-      {/* Footer */}
-      <div className="p-4 border-t">
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
-            {projects.length} projects
-          </div>
-          <Button variant="ghost" size="sm">
-            <Settings className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
+        <SidebarFooter className="border-t">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton>
+                <Avatar className="w-6 h-6">
+                  <AvatarImage src={user?.avatar_url} alt={user?.name} />
+                  <AvatarFallback>{user?.name?.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col items-start text-left">
+                  <span className="text-sm font-medium">{user?.name}</span>
+                  <span className="text-xs text-muted-foreground">{user?.email}</span>
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={logout}>
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </Sidebar>
+      
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onSuccess={handleProjectCreated}
+      />
+
+      <DeleteProjectDialog
+        project={projectToDelete}
+        isOpen={deleteDialogOpen}
+        onClose={handleCloseDeleteDialog}
+        onConfirm={handleConfirmDelete}
+        isDeleting={isDeletingProject}
+      />
+    </>
   );
-};
+});
+
+ProjectSidebar.displayName = 'ProjectSidebar';

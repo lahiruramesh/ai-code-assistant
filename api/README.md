@@ -23,7 +23,7 @@ This is the enhanced API-v2 backend for the Code Editing Agent with DuckDB integ
 - `GET /health` - Health check with database status
 - `POST /api/v1/chat/create-session` - Create new chat session
 - `WS /api/v1/chat/stream/{project_id}` - WebSocket streaming
-- `GET /api/v1/projects/` - List all projects
+- `GET /api/v1/projects` - List all projects
 - `POST /api/v1/projects/` - Create new project
 - `GET /api/v1/projects/{id}` - Get project details
 - `GET /api/v1/projects/{id}/files` - Get project file structure
@@ -43,7 +43,6 @@ nano .env
 ### 2. Start the Server
 ```bash
 uv sync
-uv run python test_backend.py
 uv run uvicorn main:app --host localhost --port 8084 --reload
 ```
 

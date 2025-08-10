@@ -3,15 +3,285 @@ from datetime import datetime
 import uuid
 import random
 import re
+import duckdb
 from app.database.connection import db
 from app.database.models import (
     Project, ProjectCreate, ConversationMessage, ConversationMessageCreate,
-    TokenUsage, TokenUsageCreate
+    TokenUsage, TokenUsageCreate, User, UserCreate, GitHubRepository, 
+    VercelDeploymentRecord
 )
 
 class DatabaseService:
     def __init__(self):
         self.conn = db.get_connection()
+        self.create_tables()
+    
+    def _execute_with_retry(self, query: str, params: list = None, max_retries: int = 3):
+        """Execute a query with automatic retry on database invalidation"""
+        for attempt in range(max_retries):
+            try:
+                if params:
+                    return self.conn.execute(query, params)
+                else:
+                    return self.conn.execute(query)
+            except duckdb.FatalException as e:
+                if "database has been invalidated" in str(e) and attempt < max_retries - 1:
+                    print(f"Database invalidated, reconnecting (attempt {attempt + 1})")
+                    # Reconnect to database
+                    self.conn = db.reconnect()
+                    continue
+                raise
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Database error, retrying (attempt {attempt + 1}): {e}")
+                    try:
+                        self.conn = db.reconnect()
+                        continue
+                    except:
+                        pass
+                raise
+        
+    def _fetchone_with_retry(self, query: str, params: list = None):
+        """Execute query and fetch one result with retry logic"""
+        result = self._execute_with_retry(query, params)
+        return result.fetchone()
+    
+    def _fetchall_with_retry(self, query: str, params: list = None):
+        """Execute query and fetch all results with retry logic"""
+        result = self._execute_with_retry(query, params)
+        return result.fetchall()
+    
+    def create_tables(self):
+        """Create all necessary tables"""
+        cursor = self.conn.cursor()
+        
+        # Users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                avatar_url TEXT,
+                google_id TEXT,
+                github_username TEXT,
+                github_token TEXT,
+                vercel_token TEXT,
+                vercel_team_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # GitHub repositories table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS github_repositories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                project_id TEXT,
+                repo_name TEXT NOT NULL,
+                repo_url TEXT NOT NULL,
+                clone_url TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (project_id) REFERENCES projects (id)
+            )
+        """)
+        
+        # Vercel deployments table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vercel_deployments (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                deployment_id TEXT NOT NULL,
+                deployment_url TEXT NOT NULL,
+                status TEXT DEFAULT 'QUEUED',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (project_id) REFERENCES projects (id)
+            )
+        """)
+        
+        # Check if projects table needs updating
+        try:
+            # Try to add new columns to existing projects table
+            cursor.execute("ALTER TABLE projects ADD COLUMN user_id TEXT")
+        except:
+            pass  # Column might already exist
+            
+        try:
+            cursor.execute("ALTER TABLE projects ADD COLUMN github_repo_id TEXT")
+        except:
+            pass
+            
+        try:
+            cursor.execute("ALTER TABLE projects ADD COLUMN vercel_deployment_id TEXT")
+        except:
+            pass
+        
+        self.conn.commit()
+    
+    # User operations
+    async def create_user(self, user_data: UserCreate) -> User:
+        user_id = str(uuid.uuid4())
+        
+        query = """
+        INSERT INTO users (id, email, name, avatar_url, google_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.conn.execute(
+            query, 
+            [user_id, user_data.email, user_data.name, user_data.avatar_url, user_data.google_id]
+        )
+        self.conn.commit()
+        
+        return await self.get_user_by_id(user_id)
+    
+    async def get_user_by_id(self, user_id: str) -> Optional[User]:
+        query = "SELECT * FROM users WHERE id = ?"
+        result = self.conn.execute(query, [user_id]).fetchone()
+        if result:
+            return User(
+                id=result[0], email=result[1], name=result[2], avatar_url=result[3],
+                google_id=result[4], github_username=result[5], github_token=result[6],
+                vercel_token=result[7], vercel_team_id=result[8], 
+                created_at=result[9], updated_at=result[10]
+            )
+        return None
+    
+    async def get_user_by_email(self, email: str) -> Optional[User]:
+        query = "SELECT * FROM users WHERE email = ?"
+        result = self.conn.execute(query, [email]).fetchone()
+        if result:
+            return User(
+                id=result[0], email=result[1], name=result[2], avatar_url=result[3],
+                google_id=result[4], github_username=result[5], github_token=result[6],
+                vercel_token=result[7], vercel_team_id=result[8],
+                created_at=result[9], updated_at=result[10]
+            )
+        return None
+    
+    async def update_user_github(self, user_id: str, github_username: str, github_token: str):
+        query = """
+        UPDATE users 
+        SET github_username = ?, github_token = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+        """
+        self.conn.execute(query, [github_username, github_token, user_id])
+        self.conn.commit()
+    
+    async def update_user_vercel(self, user_id: str, vercel_token: str, vercel_team_id: Optional[str] = None):
+        query = """
+        UPDATE users 
+        SET vercel_token = ?, vercel_team_id = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+        """
+        self.conn.execute(query, [vercel_token, vercel_team_id, user_id])
+        self.conn.commit()
+    
+    # GitHub repository operations
+    async def create_github_repository(self, repo: GitHubRepository) -> GitHubRepository:
+        query = """
+        INSERT INTO github_repositories (id, user_id, project_id, repo_name, repo_url, clone_url, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """
+        self.conn.execute(
+            query,
+            [repo.id, repo.user_id, repo.project_id, repo.repo_name, repo.repo_url, repo.clone_url]
+        )
+        self.conn.commit()
+        return repo
+    
+    async def get_github_repository_by_name(self, user_id: str, repo_name: str) -> Optional[GitHubRepository]:
+        query = "SELECT * FROM github_repositories WHERE user_id = ? AND repo_name = ?"
+        result = self.conn.execute(query, [user_id, repo_name]).fetchone()
+        if result:
+            return GitHubRepository(
+                id=result[0], user_id=result[1], project_id=result[2],
+                repo_name=result[3], repo_url=result[4], clone_url=result[5],
+                created_at=result[6]
+            )
+        return None
+    
+    async def get_github_repository_by_project(self, project_id: str) -> Optional[GitHubRepository]:
+        query = "SELECT * FROM github_repositories WHERE project_id = ?"
+        result = self.conn.execute(query, [project_id]).fetchone()
+        if result:
+            return GitHubRepository(
+                id=result[0], user_id=result[1], project_id=result[2],
+                repo_name=result[3], repo_url=result[4], clone_url=result[5],
+                created_at=result[6]
+            )
+        return None
+    
+    async def update_github_repository_project(self, repo_id: str, project_id: str):
+        query = "UPDATE github_repositories SET project_id = ? WHERE id = ?"
+        self.conn.execute(query, [project_id, repo_id])
+        self.conn.commit()
+    
+    async def delete_github_repository_by_name(self, user_id: str, repo_name: str):
+        query = "DELETE FROM github_repositories WHERE user_id = ? AND repo_name = ?"
+        self.conn.execute(query, [user_id, repo_name])
+        self.conn.commit()
+    
+    # Vercel deployment operations
+    async def create_vercel_deployment(self, deployment: VercelDeploymentRecord) -> VercelDeploymentRecord:
+        query = """
+        INSERT INTO vercel_deployments (id, user_id, project_id, deployment_id, deployment_url, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """
+        self.conn.execute(
+            query,
+            [deployment.id, deployment.user_id, deployment.project_id, 
+             deployment.deployment_id, deployment.deployment_url, deployment.status]
+        )
+        self.conn.commit()
+        return deployment
+    
+    async def get_vercel_deployment_by_deployment_id(self, deployment_id: str) -> Optional[VercelDeploymentRecord]:
+        query = "SELECT * FROM vercel_deployments WHERE deployment_id = ?"
+        result = self.conn.execute(query, [deployment_id]).fetchone()
+        if result:
+            return VercelDeploymentRecord(
+                id=result[0], user_id=result[1], project_id=result[2],
+                deployment_id=result[3], deployment_url=result[4], status=result[5],
+                created_at=result[6], updated_at=result[7]
+            )
+        return None
+    
+    async def update_vercel_deployment_status(self, deployment_id: str, status: str):
+        query = """
+        UPDATE vercel_deployments 
+        SET status = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE deployment_id = ?
+        """
+        self.conn.execute(query, [status, deployment_id])
+        self.conn.commit()
+    
+    async def delete_vercel_deployment_by_deployment_id(self, deployment_id: str):
+        query = "DELETE FROM vercel_deployments WHERE deployment_id = ?"
+        self.conn.execute(query, [deployment_id])
+        self.conn.commit()
+    
+    # Update project operations to include user and integration relations
+    async def update_project_github_repo(self, project_id: str, github_repo_id: str):
+        query = """
+        UPDATE projects 
+        SET github_repo_id = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+        """
+        self.conn.execute(query, [github_repo_id, project_id])
+        self.conn.commit()
+    
+    async def update_project_vercel_deployment(self, project_id: str, vercel_deployment_id: str):
+        query = """
+        UPDATE projects 
+        SET vercel_deployment_id = ?, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = ?
+        """
+        self.conn.execute(query, [vercel_deployment_id, project_id])
+        self.conn.commit()
     
     # Project operations
     def create_project(self, project_data: ProjectCreate) -> Project:
@@ -23,10 +293,10 @@ class DatabaseService:
         VALUES (?, ?, ?, ?, ?, 'created', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """
-        result = self.conn.execute(
+        result = self._fetchone_with_retry(
             query, 
             [project_id, project_data.name, project_data.template, project_data.docker_container, project_data.port]
-        ).fetchone()
+        )
         self.conn.commit()
         
         return Project(
@@ -48,10 +318,10 @@ class DatabaseService:
         WHERE id = ?
         RETURNING *
         """
-        result = self.conn.execute(
+        result = self._fetchone_with_retry(
             query, 
             [project_data.name, project_data.template, project_data.docker_container, project_data.port, project_id]
-        ).fetchone()
+        )
         self.conn.commit()
         
         return Project(
@@ -68,7 +338,7 @@ class DatabaseService:
     
     def get_project_by_id(self, project_id: str) -> Optional[Project]:
         query = "SELECT * FROM projects WHERE id = ?"
-        result = self.conn.execute(query, [project_id]).fetchone()
+        result = self._fetchone_with_retry(query, [project_id])
         if result:
             return Project(
                 id=result[0],
@@ -84,7 +354,7 @@ class DatabaseService:
     
     def get_project_by_name(self, name: str) -> Optional[Project]:
         query = "SELECT * FROM projects WHERE name = ?"
-        result = self.conn.execute(query, [name]).fetchone()
+        result = self._fetchone_with_retry(query, [name])
         if result:
             return Project(
                 id=result[0],
@@ -100,7 +370,7 @@ class DatabaseService:
     
     def get_all_projects(self) -> List[Project]:
         query = "SELECT * FROM projects ORDER BY created_at DESC"
-        results = self.conn.execute(query).fetchall()
+        results = self._fetchall_with_retry(query)
         return [
             Project(
                 id=row[0],
@@ -115,6 +385,27 @@ class DatabaseService:
             for row in results
         ]
     
+    def delete_project(self, project_id: str) -> bool:
+        """Delete a project and all associated data"""
+        try:
+            # Delete associated conversation messages first (foreign key constraint)
+            delete_messages_query = "DELETE FROM conversation_messages WHERE project_id = ?"
+            self._execute_with_retry(delete_messages_query, [project_id])
+            
+            # Delete associated token usage records
+            delete_tokens_query = "DELETE FROM token_usage WHERE project_id = ?"
+            self._execute_with_retry(delete_tokens_query, [project_id])
+            
+            # Delete the project
+            delete_project_query = "DELETE FROM projects WHERE id = ?"
+            result = self._execute_with_retry(delete_project_query, [project_id])
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting project {project_id}: {e}")
+            raise
+    
     # Conversation operations
     def create_conversation_message(self, message_data: ConversationMessageCreate) -> ConversationMessage:
         import uuid
@@ -125,13 +416,13 @@ class DatabaseService:
         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
         """
-        result = self.conn.execute(
+        result = self._fetchone_with_retry(
             query,
             [
                 message_id, message_data.project_id, message_data.role, message_data.content,
                 message_data.message_type, message_data.model, message_data.provider
             ]
-        ).fetchone()
+        )
         self.conn.commit()
         
         return ConversationMessage(
@@ -153,7 +444,7 @@ class DatabaseService:
         WHERE project_id = ? AND message_type = 'chat'
         ORDER BY created_at ASC
         """
-        results = self.conn.execute(query, [project_id]).fetchall()
+        results = self._fetchall_with_retry(query, [project_id])
         return [
             ConversationMessage(
                 id=row[0],

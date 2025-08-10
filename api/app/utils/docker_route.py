@@ -38,6 +38,45 @@ def deploy_app(template_name: str,project_name: str, container_name: str, port: 
         raise RuntimeError(f"Deployment failed: {str(e)}")
 
 
+def delete_project_and_cleanup(container_name: str, project_path: str) -> dict:
+    """Delete project container, image and cleanup files."""
+    try:
+        result = {
+            "container_removed": False,
+            "image_removed": False,
+            "files_removed": False,
+            "errors": []
+        }
+        
+        # Remove container and image using dock-route
+        if container_name:
+            try:
+                command_as_list = [
+                    DOCK_ROUTE_PATH,
+                    "remove",
+                    container_name,
+                    "--remove-image",
+                    "--force"
+                ]
+                execute_command(command_as_list)
+                result["container_removed"] = True
+                result["image_removed"] = True
+            except Exception as e:
+                result["errors"].append(f"Failed to remove container/image: {str(e)}")
+        
+        # Remove project files
+        if project_path and os.path.exists(project_path):
+            try:
+                shutil.rmtree(project_path)
+                result["files_removed"] = True
+            except Exception as e:
+                result["errors"].append(f"Failed to remove project files: {str(e)}")
+        
+        return result
+    except Exception as e:
+        raise RuntimeError(f"Project cleanup failed: {str(e)}")
+
+
 def check_container_status(container_name: str) -> dict:
     """
     Check the status of a specific Docker container.

@@ -5,11 +5,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { Send, User, Bot, Sparkles, Code2, Palette, Activity, AlertCircle, StopCircle, Settings } from 'lucide-react';
+import { Send, User, Bot, Activity, AlertCircle, StopCircle, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { eventManager, EVENTS } from '@/services/eventManager';
+import { soundService } from '@/services/soundService';
+import { chatApi, modelsApi } from '@/services/api';
 import ModelSelector from '@/components/ModelSelector';
 import TokenUsageDisplay from '@/components/TokenUsageDisplay';
+import { Textarea } from './ui/textarea';
 
 interface Message {
   id: string;
@@ -61,7 +64,6 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
   const wsRef = useRef<WebSocket | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Initialize WebSocket connection only when we have a project
   useEffect(() => {
@@ -142,21 +144,18 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
   const loadProjectChatHistory = async (projectId: string) => {
     setIsLoadingHistory(true);
     try {
-      const response = await fetch(`${API_BASE}/projects/${projectId}/messages`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.messages && Array.isArray(data.messages)) {
-          const loadedMessages = data.messages.map((msg: any) => ({
-            id: msg.id.toString(),
-            content: msg.content,
-            sender: msg.role === 'user' ? 'user' : 'assistant',
-            timestamp: new Date(msg.created_at),
-            type: 'text',
-            agent_type: msg.role === 'assistant' ? 'react' : undefined
-          }));
+      const data = await chatApi.getMessages(projectId);
+      if (data.messages && Array.isArray(data.messages)) {
+        const loadedMessages = data.messages.map((msg: any) => ({
+          id: msg.id.toString(),
+          content: msg.content,
+          sender: (msg.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+          timestamp: new Date(msg.created_at),
+          type: 'text' as const,
+          agent_type: msg.role === 'assistant' ? 'react' : undefined
+        }));
 
-          setMessages(loadedMessages);
-        }
+        setMessages(loadedMessages);
       }
     } catch (error) {
       console.error('Failed to load project chat history:', error);
@@ -167,20 +166,17 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
   const loadChatHistory = async (chatId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/chat/${chatId}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.messages && Array.isArray(data.messages)) {
-          const loadedMessages = data.messages.map((msg: any) => ({
-            id: msg.id,
-            content: msg.content,
-            sender: msg.type === 'user' ? 'user' : 'assistant',
-            timestamp: new Date(msg.timestamp),
-            type: msg.type || 'text',
-            agent_type: msg.agent_type
-          }));
-          setMessages(loadedMessages);
-        }
+      const data = await chatApi.getChatById(chatId);
+      if (data.messages && Array.isArray(data.messages)) {
+        const loadedMessages = data.messages.map((msg: any) => ({
+          id: msg.id,
+          content: msg.content,
+          sender: (msg.type === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+          timestamp: new Date(msg.timestamp),
+          type: msg.type || 'text',
+          agent_type: msg.agent_type
+        }));
+        setMessages(loadedMessages);
       }
     } catch (error) {
       console.error('Failed to load chat history:', error);
@@ -189,9 +185,8 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
   const fetchProviderInfo = async () => {
     try {
-      const response = await fetch(`${API_BASE}/models`);
-      const data = await response.json();
-      setCurrentProvider(data.provider || 'unknown');
+      const data = await modelsApi.getProviderInfo();
+      setCurrentProvider(data.current_provider || 'unknown');
     } catch (error) {
       console.error('Failed to fetch provider info:', error);
     }
@@ -208,65 +203,29 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
       setIsProcessing(true);
       addStatusMessage('Creating new project...', 'processing');
 
-      const response = await fetch(`${API_BASE}/chat/create-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: message
-        }),
+      const data = await chatApi.createSession(message);
+      setCurrentProjectId(data.project_id);
+      setCurrentSessionId(data.session_id);
+
+      addStatusMessage(`Project created successfully!`, 'completed');
+
+      // Emit project events
+      eventManager.emit(EVENTS.PROJECT_BUILD_START, {
+        step: 'Project Setup',
+        progress: 0
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setCurrentProjectId(data.project_id);
-        setCurrentSessionId(data.session_id);
+      // Redirect to project-based URL
+      window.history.replaceState({}, '', `/projects/${data.project_id}`);
 
-        addStatusMessage(`Project "${data.project_name}" created successfully!`, 'completed');
+      // Connect WebSocket to the new project
+      connectWebSocket(data.project_id);
 
-        // Emit project events
-        eventManager.emit(EVENTS.PROJECT_BUILD_START, {
-          step: 'Project Setup',
-          progress: 0
-        });
-
-        // Emit project data for other components with validation
-        if (data.project_id && data.project_name && data.project_path && data.url) {
-          eventManager.emit('PROJECT_CREATED', {
-            projectId: data.project_id,
-            projectName: data.project_name,
-            projectPath: data.project_path,
-            projectUrl: data.url
-          });
-
-          // Keep preview in loading state until build completes
-          eventManager.emit(EVENTS.PROJECT_BUILD_START, {
-            step: 'Initializing Project',
-            progress: 10
-          });
-        }
-
-        // Redirect to project-based URL
-        window.history.replaceState({}, '', `/projects/${data.project_id}`);
-
-        // Add the initial user message to the chat
-        if (data.initial_message) {
-          addMessage(data.initial_message, 'user');
-        }
-
-        // Connect WebSocket to the new project
-        connectWebSocket(data.project_id);
-
-        // Send the initial message automatically
-        if (data.initial_message && data.session_id) {
-          setTimeout(() => {
-            sendMessageToAgent(data.initial_message, data.session_id);
-          }, 1500);
-        }
-      } else {
-        const errorData = await response.json();
-        addStatusMessage(`Failed to create project: ${errorData.error || 'Unknown error'}`, 'error');
+      // Send the initial message automatically
+      if (data.session_id) {
+        setTimeout(() => {
+          sendMessageToAgent(message, data.session_id);
+        }, 1500);
       }
     } catch (error) {
       console.error('Failed to create project:', error);
@@ -329,7 +288,13 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         setIsConnected(false);
-        addStatusMessage('Connection error', 'error');
+        
+        // Check if this is a connection refused error (API server down)
+        if (ws.readyState === WebSocket.CONNECTING) {
+          addStatusMessage('Unable to connect to project. Please check if the backend is running.', 'error');
+        } else {
+          addStatusMessage('Connection error occurred', 'error');
+        }
       };
 
       wsRef.current = ws;
@@ -350,12 +315,16 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
       case 'status':
         setIsTyping(true);
         addStatusMessage(data.content, 'processing');
+        // Play agent activity sound
+        soundService.playAgentActivity();
         break;
       case 'completion':
         setIsTyping(false);
         setIsProcessing(false);
         setCurrentSessionId(null);
         addStatusMessage(data.content, 'completed');
+        // Play completion sound
+        soundService.playSuccess();
         break;
       case 'cancelled':
         setIsTyping(false);
@@ -368,10 +337,14 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
         setIsProcessing(false);
         setCurrentSessionId(null);
         addStatusMessage(data.content, 'error');
+        // Play error sound
+        soundService.playError();
         break;
       case 'agent_response':
         setIsTyping(false);
         addMessage(data.content, 'assistant', data.agent_type);
+        // Play message received sound
+        soundService.playMessageReceived();
         break;
       case 'agent_chunk':
         // Handle streaming chunks - append to last message or create new one
@@ -382,9 +355,12 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
         setIsTyping(false);
         setIsProcessing(false);
         addStatusMessage('Response completed', 'completed');
+        // Play build complete sound for final completion
+        soundService.playBuildComplete();
         break;
       case 'message_received':
         addStatusMessage('Message received, processing...', 'processing');
+        soundService.playStepComplete();
         break;
       case 'debug':
         // Only show debug messages in development
@@ -520,19 +496,11 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
     try {
       // Call the cancel endpoint
-      const response = await fetch(`${API_BASE}/chat/${currentSessionId}/cancel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        addStatusMessage('Request cancelled', 'cancelled');
-        setIsProcessing(false);
-        setIsTyping(false);
-        setCurrentSessionId(null);
-      }
+      await chatApi.cancelSession(currentSessionId);
+      addStatusMessage('Request cancelled', 'cancelled');
+      setIsProcessing(false);
+      setIsTyping(false);
+      setCurrentSessionId(null);
     } catch (error) {
       console.error('Failed to cancel request:', error);
       addStatusMessage('Failed to cancel request', 'error');
@@ -553,7 +521,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
   }, [messages]);
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background min-h-0">
       {/* Chat Header - Fixed */}
       <div className="flex-shrink-0 p-4 border-b border-border/50 bg-card/50 backdrop-blur-sm">
         <div className="flex items-center justify-between">
@@ -597,7 +565,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
                 <h3 className="text-sm font-medium mb-2">Token Usage</h3>
                 <TokenUsageDisplay
                   sessionId={sessionId}
-                  showGlobalStats={false}
+                  showGlobalStats={true}
                   className="max-h-48"
                 />
               </div>
@@ -607,8 +575,8 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
       </div>
 
       {/* Messages - Scrollable */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <ScrollArea className="flex-1" ref={scrollAreaRef}>
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <ScrollArea className="flex-1 h-full" ref={scrollAreaRef}>
           <div className="p-4 space-y-4">
             {isLoadingHistory ? (
               <div className="flex items-center justify-center py-8">
@@ -711,15 +679,15 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
       {/* Input - Fixed */}
       <div className="flex-shrink-0 p-4 border-t border-border/50 bg-card/50 backdrop-blur-sm">
-        <div className="flex gap-2">
-          <Input
-            ref={inputRef}
+        <div className="flex gap-2 items-center">
+          <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder={isConnected ? "Describe what you want to build..." : "Connecting..."}
             disabled={!isConnected || isProcessing}
             className="flex-1"
+            rows={4}
           />
           {isProcessing ? (
             <Button

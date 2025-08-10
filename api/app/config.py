@@ -22,6 +22,17 @@ MODEL_NAME = os.getenv("MODEL_NAME", "anthropic/claude-3.5-sonnet")
 PROJECTS_DIR = os.getenv("PROJECTS_DIR", "/tmp/projects")
 PROJECTS_TEMPLATE_DIR = os.getenv("PROJECTS_TEMPLATE_DIR", "/tmp/projects/templates")
 
+# GitHub Configuration
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
+
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+
+WEB_URL = os.getenv("WEB_URL", "http://localhost:5173")
+
 # Docker Configuration
 DOCK_ROUTE_PATH = os.getenv("DOCK_ROUTE_PATH", "/usr/local/bin/dock-route")
 

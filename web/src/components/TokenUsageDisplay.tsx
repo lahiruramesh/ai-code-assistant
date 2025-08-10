@@ -13,6 +13,7 @@ import {
   ArrowDown,
   Activity
 } from "lucide-react";
+import { useSessionTokenUsage, useGlobalTokenStats } from '@/hooks';
 
 interface TokenUsageStats {
   total_requests: number;
@@ -57,49 +58,30 @@ const TokenUsageDisplay: React.FC<TokenUsageDisplayProps> = ({
   showGlobalStats = false,
   className = "",
 }) => {
-  const [sessionUsage, setSessionUsage] = useState<SessionTokenUsage | null>(null);
-  const [globalStats, setGlobalStats] = useState<TokenUsageStats | null>(null);
-  const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  // Use hooks for data fetching
+  const { 
+    data: sessionUsage, 
+    isLoading: sessionLoading, 
+    error: sessionError,
+    refetch: refetchSession 
+  } = useSessionTokenUsage(sessionId);
+
+  const { 
+    data: globalStats, 
+    isLoading: globalLoading,
+    error: globalError,
+    refetch: refetchGlobal 
+  } = useGlobalTokenStats();
+
+  const loading = sessionLoading || globalLoading;
+
   useEffect(() => {
-    if (sessionId) {
-      fetchSessionUsage();
-    }
-    if (showGlobalStats) {
-      fetchGlobalStats();
-    }
-  }, [sessionId, showGlobalStats]);
-
-  const fetchSessionUsage = async () => {
-    if (!sessionId) return;
-    
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/v1/tokens/usage/${sessionId}`);
-      const data = await response.json();
-      setSessionUsage(data);
+    if (sessionUsage || globalStats) {
       setLastUpdated(new Date());
-    } catch (error) {
-      console.error('Failed to fetch session token usage:', error);
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const fetchGlobalStats = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/v1/tokens/stats');
-      const data = await response.json();
-      setGlobalStats(data);
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error('Failed to fetch global token stats:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [sessionUsage, globalStats]);
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) {
@@ -129,10 +111,10 @@ const TokenUsageDisplay: React.FC<TokenUsageDisplayProps> = ({
 
   const refresh = () => {
     if (sessionId) {
-      fetchSessionUsage();
+      refetchSession();
     }
     if (showGlobalStats) {
-      fetchGlobalStats();
+      refetchGlobal();
     }
   };
 

@@ -176,7 +176,8 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
             
             # Send completion signal
             await websocket.send_json({
-                "type": "response_complete",
+                "type": "completion",
+                "content": "Response completed successfully",
                 "session_id": session_id,
                 "token_usage": {
                     "input_tokens": input_tokens,
@@ -199,20 +200,20 @@ async def create_chat_session(request: ChatRequest):
     fancy_name = db_service.generate_fancy_project_name(request.message)
     
     # Check port availability
+    # TODO: Implement a more robust port checking mechanism
     port = random.randint(8084, 9999)
     try:
         deploy_result = deploy_app("react-shadcn-template", fancy_name, fancy_name.lower(), int(port))
     except Exception as e:
         return {
             "error": str(e)
-        }   
+        }
         
     project_path = deploy_result.get("project_path")
     container_name = deploy_result.get("container_name")
-    # Create new project
     project_data = ProjectCreate(
         name=fancy_name,
-        template="nextjs-shadcn-template",
+        template="reactjs-shadcn-template",
         docker_container=container_name,
         port=port
     )
@@ -227,7 +228,7 @@ async def create_chat_session(request: ChatRequest):
         role="user",
         content=request.message,
         message_type="chat",
-        model="anthropic/claude-3.5-sonnet",
+        model=MODEL_NAME,
         provider="openrouter"
     )
     db_service.create_conversation_message(user_message)
