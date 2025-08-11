@@ -14,6 +14,14 @@ The Code Editing Agent Platform is a comprehensive solution for AI-assisted soft
 - **OAuth Authentication**: Secure authentication with Google, GitHub, and Vercel integrations
 - **Real-time Collaboration**: WebSocket-based streaming for instant AI responses
 
+### 🎬 Platform in Action
+
+![AI Assistant in Action](docs/images/ai-in-action.jpeg)
+*AI-powered development with real-time streaming responses and intelligent code assistance*
+
+![Code Generation Results](docs/images/code-results.jpeg)
+*Generated code with modern UI components and responsive design*
+
 ## 🏗️ Architecture
 
 ```
@@ -42,6 +50,26 @@ code-editing-agent/
 - **State Management**: TanStack Query (React Query)
 - **Code Editor**: Monaco Editor integration
 - **Package Manager**: npm/pnpm
+
+## 📸 Screenshots
+
+### AI-Powered Development Experience
+![AI Assistant in Action](docs/images/ai-in-action.jpeg)
+
+Experience intelligent code assistance with:
+- Real-time streaming AI responses
+- Conversational development workflow
+- Multi-model LLM support
+- Project-aware context understanding
+
+### Generated Code Results
+![Code Generation Results](docs/images/code-results.jpeg)
+
+See the platform generate:
+- Modern React components with TypeScript
+- Responsive UI with Tailwind CSS
+- shadcn/ui component integration
+- Professional code structure and styling
 
 ## 🚀 Quick Start
 

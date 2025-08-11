@@ -95,7 +95,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
           id: msg.id.toString(),
           content: msg.content,
           sender: (msg.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-          timestamp: new Date(msg.created_at),
+          timestamp: msg.created_at ? new Date(msg.created_at) : new Date(),
           type: 'text' as const,
           agent_type: msg.role === 'assistant' ? 'react' : undefined
         }));

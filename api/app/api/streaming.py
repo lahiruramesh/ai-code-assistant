@@ -42,11 +42,23 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
         
         while True:
             data = await websocket.receive_text()
-            payload = json.loads(data)
-            
-            message = payload.get("message", "")
-            model = payload.get("model", MODEL_NAME)
-            provider = payload.get("provider", "openrouter")
+            try:
+                payload = json.loads(data)
+                if not isinstance(payload, dict):
+                    print(f"Invalid payload format: expected dict, got {type(payload)}")
+                    continue
+                    
+                message = payload.get("message", "")
+                model = payload.get("model", MODEL_NAME)
+                provider = payload.get("provider", "openrouter")
+            except (json.JSONDecodeError, AttributeError) as parse_error:
+                print(f"Error parsing WebSocket message: {parse_error}")
+                await websocket.send_json({
+                    "type": "error",
+                    "content": "Invalid message format",
+                    "session_id": session_id
+                })
+                continue
             
             # Store user message
             user_message = ConversationMessageCreate(
@@ -107,10 +119,14 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
                                 })
                         
                         # Extract token usage if available
-                        if "input_tokens" in chunk:
-                            input_tokens += chunk.get("input_tokens", 0)
-                        if "output_tokens" in chunk:
-                            output_tokens += chunk.get("output_tokens", 0)
+                        try:
+                            if "input_tokens" in chunk:
+                                input_tokens += chunk.get("input_tokens", 0)
+                            if "output_tokens" in chunk:
+                                output_tokens += chunk.get("output_tokens", 0)
+                        except (TypeError, KeyError) as token_error:
+                            print(f"Error extracting token usage: {token_error}")
+                            pass
                     
                     # Handle raw string content
                     elif isinstance(chunk, str) and chunk.strip():
@@ -125,28 +141,39 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
                     
                     # Handle LangChain log patches
                     elif hasattr(chunk, 'ops') and chunk.ops:
-                        for op in chunk.ops:
-                            if op.get('op') == 'add' and 'content' in op.get('value', {}):
-                                content = op['value']['content']
-                                if isinstance(content, str) and content.strip():
-                                    full_response += content
-                                    await websocket.send_json({
-                                        "type": "agent_response",
-                                        "content": content,
-                                        "session_id": session_id,
-                                        "project_id": project_id,
-                                        "agent_type": "react"
-                                    })
+                        try:
+                            for op in chunk.ops:
+                                if isinstance(op, dict) and op.get('op') == 'add':
+                                    op_value = op.get('value', {})
+                                    if isinstance(op_value, dict) and 'content' in op_value:
+                                        content = op_value['content']
+                                        if isinstance(content, str) and content.strip():
+                                            full_response += content
+                                            await websocket.send_json({
+                                                "type": "agent_response",
+                                                "content": content,
+                                                "session_id": session_id,
+                                                "project_id": project_id,
+                                                "agent_type": "react"
+                                            })
+                        except (TypeError, AttributeError, KeyError) as op_error:
+                            print(f"Error processing ops chunk: {op_error}")
+                            continue
                 
                 except Exception as chunk_error:
                     print(f"Error processing chunk: {chunk_error}")
+                    print(f"Chunk type: {type(chunk)}, Chunk content: {str(chunk)[:200]}...")
                     # Send the raw chunk for debugging if needed
-                    await websocket.send_json({
-                        "type": "debug",
-                        "content": f"Debug: {str(chunk)[:200]}...",
-                        "session_id": session_id,
-                        "project_id": project_id
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "debug",
+                            "content": f"Debug: {str(chunk)[:200]}...",
+                            "session_id": session_id,
+                            "project_id": project_id
+                        })
+                    except Exception as send_error:
+                        print(f"Error sending debug message: {send_error}")
+                        pass
             
             # Store assistant response (only if it's actual content, not status messages)
             if full_response.strip():
@@ -187,9 +214,9 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
             })
             
     except WebSocketDisconnect:
-        print(f"Client disconnected from session {session_id}")
+        print(f"Client disconnected from session {str(session_id)}")
     except Exception as e:
-        print(f"An error occurred in session {session_id}: {e}")
+        print(f"An error occurred in session {str(session_id)}: {str(e)}")
         await websocket.close(code=1011, reason=str(e))
 
 @router.post("/create-session")

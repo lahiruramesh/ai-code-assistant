@@ -440,7 +440,8 @@ class DatabaseService:
     
     def get_project_messages(self, project_id: str) -> List[ConversationMessage]:
         query = """
-        SELECT * FROM conversation_messages 
+        SELECT id, session_id, project_id, role, content, message_type, model, provider, token_usage_id, created_at, updated_at 
+        FROM conversation_messages 
         WHERE project_id = ? AND message_type = 'chat'
         ORDER BY created_at ASC
         """
@@ -448,15 +449,15 @@ class DatabaseService:
         return [
             ConversationMessage(
                 id=row[0],
-                project_id=row[1],
-                role=row[2],
-                content=row[3],
-                message_type=row[4],
-                model=row[5],
-                provider=row[6],
-                token_usage_id=row[7],
-                created_at=row[8],
-                updated_at=row[9]
+                project_id=row[2],  # project_id is at index 2
+                role=row[3],        # role is at index 3
+                content=row[4],     # content is at index 4
+                message_type=row[5], # message_type is at index 5
+                model=row[6],       # model is at index 6
+                provider=row[7],    # provider is at index 7
+                token_usage_id=row[8], # token_usage_id is at index 8
+                created_at=row[9],  # created_at is at index 9
+                updated_at=row[10]  # updated_at is at index 10
             )
             for row in results
         ]
