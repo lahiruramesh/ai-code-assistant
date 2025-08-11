@@ -133,7 +133,6 @@ export const Header: React.FC<HeaderProps> = memo(({
                                     disabled={isLoading}
                                     className="flex items-center gap-2"
                                 >
-                                    <Github className="w-4 h-4" />
                                     {project?.github_repo ? 'Push to GitHub' : 'Create Repo'}
                                 </Button>
 
@@ -157,7 +156,6 @@ export const Header: React.FC<HeaderProps> = memo(({
                                 disabled={isLoading}
                                 className="flex items-center gap-2"
                             >
-                                <Github className="w-4 h-4" />
                                 <Link className="w-3 h-3" />
                                 Connect GitHub
                             </Button>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -76,59 +76,6 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
     };
   }, []);
 
-  // Keep WebSocket connection alive while on project page
-  // useEffect(() => {
-  //   if (projectId && isConnected) {
-  //     const keepAlive = setInterval(() => {
-  //       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-  //         // Send a ping to keep connection alive
-  //         wsRef.current.send(JSON.stringify({ type: 'ping' }));
-  //       }
-  //     }, 30000); // Ping every 30 seconds
-
-  //     return () => clearInterval(keepAlive);
-  //   }
-  // }, [projectId, isConnected]);
-
-  // Handle initial message from homepage or project creation
-  const [hasProcessedInitialMessage, setHasProcessedInitialMessage] = useState(false);
-
-  // useEffect(() => {
-  //   // Only process initial message once and only if it's actually new
-  //   if (initialMessage && initialMessage.trim() && !hasProcessedInitialMessage) {
-  //     if (!currentProjectId && !isProcessing) {
-  //       // New project creation scenario
-  //       setInput(initialMessage);
-  //       setHasProcessedInitialMessage(true);
-  //     } else if (currentProjectId && isConnected && !isProcessing) {
-  //       // Existing project with initial message - auto-send via WebSocket
-  //       setHasProcessedInitialMessage(true);
-  //       const timer = setTimeout(() => {
-  //         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-  //           // Add the initial message to chat
-  //           addMessage(initialMessage, 'user');
-
-  //           // Send to WebSocket automatically
-  //           const messagePayload = {
-  //             message: initialMessage,
-  //             session_id: currentSessionId || sessionId,
-  //             timestamp: new Date().toISOString()
-  //           };
-
-  //           wsRef.current.send(JSON.stringify(messagePayload));
-  //           setIsTyping(true);
-  //           setIsProcessing(true);
-
-  //           // Emit build start event
-  //           eventManager.emit(EVENTS.PROJECT_BUILD_START);
-  //         }
-  //       }, 1500); // Wait for WebSocket to be fully ready
-
-  //       return () => clearTimeout(timer);
-  //     }
-  //   }
-  // }, [initialMessage, currentProjectId, isConnected, hasProcessedInitialMessage]);
-
   // Load existing chat if chatId or projectId is provided
   useEffect(() => {
     if (projectId) {
@@ -136,12 +83,10 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
       setCurrentProjectId(projectId);
       // Auto-connect WebSocket for project
       connectWebSocket(projectId);
-    } else if (chatId) {
-      loadChatHistory(chatId);
     }
-  }, [chatId, projectId]);
+  }, [projectId]);
 
-  const loadProjectChatHistory = async (projectId: string) => {
+  const loadProjectChatHistory = useCallback(async (projectId: string) => {
     setIsLoadingHistory(true);
     try {
       const data = await chatApi.getMessages(projectId);
@@ -162,31 +107,13 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
     } finally {
       setIsLoadingHistory(false);
     }
-  };
+  }, [setMessages]);
+  console.log('Current Project ID:', messages);
 
-  const loadChatHistory = async (chatId: string) => {
-    try {
-      const data = await chatApi.getChatById(chatId);
-      if (data.messages && Array.isArray(data.messages)) {
-        const loadedMessages = data.messages.map((msg: any) => ({
-          id: msg.id,
-          content: msg.content,
-          sender: (msg.type === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-          timestamp: new Date(msg.timestamp),
-          type: msg.type || 'text',
-          agent_type: msg.agent_type
-        }));
-        setMessages(loadedMessages);
-      }
-    } catch (error) {
-      console.error('Failed to load chat history:', error);
-    }
-  };
-
-  const fetchProviderInfo = async () => {
+  const fetchProviderInfo = async () => { 
     try {
       const data = await modelsApi.getProviderInfo();
-      setCurrentProvider(data.current_provider || 'unknown');
+      setCurrentProvider(data.provider || 'unknown');
     } catch (error) {
       console.error('Failed to fetch provider info:', error);
     }

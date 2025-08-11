@@ -46,7 +46,7 @@ async def websocket_stream(websocket: WebSocket, project_id: str):
             
             message = payload.get("message", "")
             model = payload.get("model", MODEL_NAME)
-            provider = payload.get("provider", "openai")
+            provider = payload.get("provider", "openrouter")
             
             # Store user message
             user_message = ConversationMessageCreate(

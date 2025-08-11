@@ -541,6 +541,104 @@ class DatabaseService:
             for row in results
         ]
     
+    def get_session_token_usage(self, session_id: str) -> List[TokenUsage]:
+        """Get token usage records for a specific session"""
+        query = """
+        SELECT * FROM token_usage 
+        WHERE session_id = ? 
+        ORDER BY created_at DESC
+        """
+        results = self._fetchall_with_retry(query, [session_id])
+        return [
+            TokenUsage(
+                id=row[0],
+                session_id=row[1],
+                project_id=row[2],
+                model=row[3],
+                provider=row[4],
+                input_tokens=row[5],
+                output_tokens=row[6],
+                total_tokens=row[7],
+                request_type=row[8],
+                created_at=row[9]
+            )
+            for row in results
+        ]
+    
+    def get_project_token_usage(self, project_id: str) -> List[TokenUsage]:
+        """Get token usage records for a specific project"""
+        query = """
+        SELECT * FROM token_usage 
+        WHERE project_id = ? 
+        ORDER BY created_at DESC
+        """
+        results = self._fetchall_with_retry(query, [project_id])
+        return [
+            TokenUsage(
+                id=row[0],
+                session_id=row[1],
+                project_id=row[2],
+                model=row[3],
+                provider=row[4],
+                input_tokens=row[5],
+                output_tokens=row[6],
+                total_tokens=row[7],
+                request_type=row[8],
+                created_at=row[9]
+            )
+            for row in results
+        ]
+    
+    def get_global_token_stats(self) -> dict:
+        """Get global token usage statistics"""
+        try:
+            # Get total token counts
+            totals_query = """
+            SELECT 
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COUNT(DISTINCT session_id) as total_sessions
+            FROM token_usage
+            """
+            totals_result = self._fetchone_with_retry(totals_query)
+            
+            # Get unique models used
+            models_query = "SELECT DISTINCT model FROM token_usage WHERE model IS NOT NULL"
+            models_results = self._fetchall_with_retry(models_query)
+            models_used = [row[0] for row in models_results]
+            
+            # Get unique providers used
+            providers_query = "SELECT DISTINCT provider FROM token_usage WHERE provider IS NOT NULL"
+            providers_results = self._fetchall_with_retry(providers_query)
+            providers_used = [row[0] for row in providers_results]
+            
+            # Get last updated timestamp
+            last_updated_query = "SELECT MAX(created_at) FROM token_usage"
+            last_updated_result = self._fetchone_with_retry(last_updated_query)
+            last_updated = last_updated_result[0] if last_updated_result and last_updated_result[0] else None
+            
+            return {
+                "total_tokens": totals_result[0] if totals_result else 0,
+                "total_input_tokens": totals_result[1] if totals_result else 0,
+                "total_output_tokens": totals_result[2] if totals_result else 0,
+                "total_sessions": totals_result[3] if totals_result else 0,
+                "models_used": models_used,
+                "providers_used": providers_used,
+                "last_updated": last_updated.isoformat() if last_updated else None
+            }
+        except Exception as e:
+            print(f"Error getting global token stats: {e}")
+            return {
+                "total_tokens": 0,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_sessions": 0,
+                "models_used": [],
+                "providers_used": [],
+                "last_updated": None
+            }
+
     def get_chat_summary(self, project_id: str) -> str:
         """Generate a summary of the chat history for a project"""
         messages = self.get_project_messages(project_id)

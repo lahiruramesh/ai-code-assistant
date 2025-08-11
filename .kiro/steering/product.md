@@ -1,17 +1,35 @@
+---
+inclusion: always
+---
+
 # Product Overview
 
-This is a Code Editing Agent platform that combines AI-powered chat capabilities with project management and code generation. The system consists of:
+This is a Code Editing Agent platform that enables developers to build applications through AI-powered conversations with persistent project context and real-time streaming responses.
 
-## Core Features
+## Core Features & Behavior
 - **AI Chat Interface**: Real-time streaming chat with LLM models for code assistance
-- **Project Management**: Create, manage, and organize coding projects with persistent storage
-- **Multi-Model Support**: Integration with various LLM providers (OpenRouter, Anthropic, Gemini, Ollama, Bedrock)
-- **Token Tracking**: Monitor and track LLM usage and costs across conversations
+- **Project Management**: Create, manage, and organize coding projects with persistent DuckDB storage
+- **Multi-Model Support**: Integration with OpenRouter, Anthropic, Gemini, Ollama, and Bedrock
+- **Token Tracking**: Monitor LLM usage and costs across conversations
 - **Conversation History**: Persistent chat sessions with project-specific context
-- **Docker Integration**: Container management for project environments
+- **Docker Integration**: Container management for project environments with template support
 
-## Architecture
-The platform uses a FastAPI backend with DuckDB for persistence, connected to a React frontend via WebSocket streaming for real-time communication. The system is designed to help developers build applications through conversational AI assistance while maintaining project context and history.
+## Key Product Conventions
+- **Streaming First**: All AI responses use WebSocket streaming for real-time feedback
+- **Project Context**: Every conversation is tied to a specific project for context persistence
+- **Cost Awareness**: Token usage and costs are tracked and displayed to users
+- **Multi-Model Flexibility**: Users can switch between different LLM providers within conversations
+- **Docker Templates**: Support for React.js, Node.js, and Next.js project templates with containerization
 
-## Target Use Case
-Developers who want an AI-powered coding assistant that can maintain context across sessions, manage multiple projects, and provide real-time streaming responses while tracking usage and costs.
+## User Experience Patterns
+- **Conversational Development**: Users interact through natural language to build and modify code
+- **Session Persistence**: Chat history and project state persist across browser sessions
+- **Real-time Feedback**: Streaming responses provide immediate visual feedback during AI processing
+- **Project Isolation**: Each project maintains separate conversation history and context
+- **Template-Based Setup**: New projects can be initialized from predefined Docker templates
+
+## Technical Constraints
+- **WebSocket Required**: All AI interactions must use WebSocket streaming endpoints
+- **Project Scoping**: All database operations should be scoped to specific projects
+- **Token Limits**: Respect model-specific token limits and provide usage feedback
+- **Docker Dependencies**: Project environments rely on Docker for isolation and consistency

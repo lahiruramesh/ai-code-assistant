@@ -27,7 +27,7 @@ This is the enhanced API-v2 backend for the Code Editing Agent with DuckDB integ
 - `POST /api/v1/projects/` - Create new project
 - `GET /api/v1/projects/{id}` - Get project details
 - `GET /api/v1/projects/{id}/files` - Get project file structure
-- `GET /api/v1/projects/{id}/conversations` - Get project conversations
+- `GET /api/v1/projects/{id}/conversations` - Get project chat messages and conversations
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ ws.send(JSON.stringify({
 
 ### Project Structure
 ```
-api-v2/
+api/
 ├── app/
 │   ├── agents/          # ReAct agent and tools
 │   ├── api/             # FastAPI routes
@@ -99,9 +99,6 @@ api-v2/
 
 ### Testing
 ```bash
-# Run backend tests
-uv run python test_backend.py
-
 # Check database
 uv run python -c "from app.database.service import db_service; print(db_service.get_all_projects())"
 ```

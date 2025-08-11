@@ -79,7 +79,7 @@ export const chatApi = {
   createSession: (message: string) =>
     apiClient.post<{ project_id: string; session_id: string }>('/chat/create-session', { message }),
   getMessages: (projectId: string) =>
-    apiClient.get<{ messages: any[] }>(`/projects/${projectId}/messages`),
+    apiClient.get<{ messages: any[] }>(`/projects/${projectId}/conversations`),
   getChatById: (chatId: string) =>
     apiClient.get<any>(`/chat/${chatId}`),
   cancelSession: (sessionId: string) =>
@@ -116,7 +116,7 @@ export const authApi = {
 
 export const modelsApi = {
   getAll: () => apiClient.get<{ models: any }>('/models/all'),
-  getProviderInfo: () => apiClient.get<{ current_provider: string }>('/models'),
+  getProviderInfo: () => apiClient.get<{ provider: string }>('/models'),
 };
 
 export const tokensApi = {

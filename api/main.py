@@ -1,7 +1,8 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import streaming, projects, auth, github, vercel
+from app.api import streaming, projects, auth, github, vercel, models, tokens
 from app.database.connection import db
 from app.database.service import db_service
 from app.config import (
@@ -16,10 +17,26 @@ if not os.path.exists("./projects"):
 if not os.path.exists("./data"):
     os.makedirs("./data")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application lifespan events"""
+    # Startup
+    print("🚀 Starting API server...")
+    print("✅ Server ready!")
+    
+    yield
+    
+    # Shutdown
+    print("🛑 Shutting down server...")
+    if hasattr(db, '_connection') and db._connection:
+        db._connection.close()
+    print("✅ Cleanup complete!")
+
 app = FastAPI(
     title="Code Editing Agent Backend with Authentication & Integrations",
     description="A streaming backend for a LangChain agent with authentication, GitHub, and Vercel integrations.",
     version="0.3.0",
+    lifespan=lifespan,
 )
 
 # Configure CORS to allow the frontend to connect
@@ -40,40 +57,32 @@ app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"]
 app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(github.router, prefix="/api/v1", tags=["GitHub Integration"])
 app.include_router(vercel.router, prefix="/api/v1", tags=["Vercel Integration"])
+app.include_router(models.router, prefix="/api/v1/models", tags=["Models"])
+app.include_router(tokens.router, prefix="/api/v1/tokens", tags=["Tokens"])
 
-@app.get("/api/v1/models")
-def get_models():
-    """Get available models and current provider"""
-    return {
-        "provider": os.getenv("LLM_PROVIDER", "openai"),
-        "models": [
-            "gpt-4",
-            "gpt-4-turbo",
-            "gpt-3.5-turbo"
-        ]
-    }
 
-@app.get("/api/v1/chat/{chat_id}")
-def get_chat_history(chat_id: str):
-    """Get chat history by chat ID (session ID)"""
-    try:
-        messages = db_service.get_conversation_messages(chat_id)
-        return {
-            "chat_id": chat_id,
-            "messages": [
-                {
-                    "id": msg.id,
-                    "type": msg.role,
-                    "content": msg.content,
-                    "timestamp": msg.created_at.isoformat() if msg.created_at else None,
-                    "model": msg.model,
-                    "provider": msg.provider
-                }
-                for msg in messages
-            ]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Chat not found: {str(e)}")
+
+# @app.get("/api/v1/chat/{chat_id}")
+# def get_chat_history(chat_id: str):
+#     """Get chat history by chat ID (session ID)"""
+#     try:
+#         messages = db_service.get_conversation_messages(chat_id)
+#         return {
+#             "chat_id": chat_id,
+#             "messages": [
+#                 {
+#                     "id": msg.id,
+#                     "type": msg.role,
+#                     "content": msg.content,
+#                     "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+#                     "model": msg.model,
+#                     "provider": msg.provider
+#                 }
+#                 for msg in messages
+#             ]
+#         }
+#     except Exception as e:
+#         raise HTTPException(status_code=404, detail=f"Chat not found: {str(e)}")
 
 @app.post("/api/v1/chat/{session_id}/cancel")
 def cancel_chat_session(session_id: str):
@@ -110,17 +119,3 @@ def health_check():
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    print("🚀 Starting API server...")
-    print("✅ Server ready!")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    print("🛑 Shutting down server...")
-    if hasattr(db, '_connection') and db._connection:
-        db._connection.close()
-    print("✅ Cleanup complete!")

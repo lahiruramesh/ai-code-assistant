@@ -267,7 +267,6 @@ async def get_file_content(project_name: str, file_path: str, source: str = None
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
 
 @router.get("/{project_id}/conversations")
-@router.get("/{project_id}/messages")
 async def get_project_messages(project_id: str):
     """Get all chat messages for a project"""
     project = db_service.get_project_by_id(project_id)

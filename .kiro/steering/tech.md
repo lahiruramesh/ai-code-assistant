@@ -1,44 +1,57 @@
-# Technology Stack
+---
+inclusion: always
+---
 
-## Backend (API)
-- **Framework**: FastAPI with Python
-- **Package Manager**: uv (Python package manager)
-- **Database**: DuckDB for persistent storage
-- **WebSocket**: Real-time streaming communication
-- **Agent Framework**: LangChain with ReAct agent pattern
-- **Environment**: Python with dotenv configuration
+# Technology Stack & Development Guidelines
 
-### Key Dependencies
-- `fastapi` - Web framework
-- `uvicorn` - ASGI server
+## Backend (API) - Python/FastAPI
+- **Framework**: FastAPI with async/await patterns
+- **Package Manager**: `uv` (REQUIRED - use `uv run` for all Python commands)
+- **Database**: DuckDB with project-scoped queries
+- **WebSocket**: Real-time streaming for all AI interactions
+- **Agent Framework**: LangChain ReAct pattern with custom tools
+- **Port**: 8084 (default)
+
+### Critical Backend Rules
+- ALL database operations MUST be project-scoped using `project_id`
+- Use async/await for I/O operations (file, database, HTTP)
+- WebSocket streaming is REQUIRED for AI chat responses
+- Import patterns: `from app.database.service import db_service`
+- Error handling: Raise `HTTPException` with descriptive messages
+
+### Key Backend Dependencies
+- `fastapi` + `uvicorn` - Web framework and ASGI server
 - `langchain` + `langchain_openai` - LLM agent framework
-- `duckdb` - Embedded database
-- `websockets` - WebSocket support
-- `pydantic` - Data validation
+- `duckdb` - Embedded database (project-scoped queries)
+- `pydantic` - Data validation and serialization
 - `aiofiles` - Async file operations
 
-## Frontend (Web)
-- **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite
-- **Package Manager**: npm/pnpm (lockfiles present for both)
-- **UI Library**: shadcn/ui with Radix UI primitives
-- **Styling**: Tailwind CSS
-- **State Management**: TanStack Query (React Query)
-- **Routing**: React Router DOM
-- **Code Editor**: Monaco Editor
+## Frontend (Web) - React/TypeScript
+- **Framework**: React 18 with TypeScript (strict mode)
+- **Build Tool**: Vite with hot reload
+- **Package Manager**: pnpm (preferred) or npm
+- **UI**: shadcn/ui components with Radix primitives
+- **Styling**: Tailwind CSS utility classes
+- **State**: TanStack Query for server state, useState for local
+- **Port**: 8080 (default)
 
-### Key Dependencies
-- `react` + `react-dom` - Core React
-- `typescript` - Type safety
-- `@radix-ui/*` - UI primitives
-- `tailwindcss` - Styling
+### Critical Frontend Rules
+- Use `@/` import alias for src imports: `import { api } from '@/services/api'`
+- ALL AI interactions MUST use WebSocket endpoints (`/ws/chat/{project_id}`)
+- Components should be functional with TypeScript interfaces
+- Handle WebSocket connection lifecycle (connect, message, disconnect, error)
+- Use TanStack Query for server state management
+
+### Key Frontend Dependencies
+- `react` + `react-dom` + `typescript` - Core framework
+- `@radix-ui/*` + `tailwindcss` - UI components and styling
 - `@tanstack/react-query` - Server state management
-- `@monaco-editor/react` - Code editor component
-- `lucide-react` - Icons
+- `@monaco-editor/react` - Code editor integration
+- `lucide-react` - Icon library
 
-## Development Commands
+## Development Workflow
 
-### Backend (from `/api` directory)
+### Backend Commands (run from `/api`)
 ```bash
 # Install dependencies
 uv sync
@@ -46,35 +59,30 @@ uv sync
 # Start development server
 uv run uvicorn main:app --host localhost --port 8084 --reload
 
-# Run tests
-uv run python test_backend.py
-
-# Quick test script
+# Database test
 uv run python -c "from app.database.service import db_service; print(db_service.get_all_projects())"
 ```
 
-### Frontend (from `/web` directory)
+### Frontend Commands (run from `/web`)
 ```bash
 # Install dependencies
-npm install
-# or
 pnpm install
 
 # Start development server
-npm run dev
+pnpm run dev
 
 # Build for production
-npm run build
-
-# Preview production build
-npm run preview
-
-# Lint code
-npm run lint
+pnpm run build
 ```
 
-## Configuration
-- **Backend**: Environment variables in `.env` (copy from `.env.sample`)
-- **Frontend**: Environment variables in `.env` (copy from `.env.example`)
-- **CORS**: Configured for ports 3000, 5173, 8080
-- **Default Ports**: Backend on 8084, Frontend on 8080
+## Configuration Requirements
+- **Backend**: Copy `api/.env.example` to `api/.env` and configure
+- **Frontend**: Copy `web/.env.example` to `web/.env` and configure
+- **CORS**: Pre-configured for development ports (3000, 5173, 8080)
+- **WebSocket**: Ensure proper connection handling for streaming responses
+
+## Architecture Patterns
+- **Project Context**: Every operation requires `project_id` parameter
+- **Streaming First**: Use WebSocket streaming for all AI interactions
+- **Error Boundaries**: Implement proper error handling at component and API levels
+- **Async Operations**: Use async/await patterns consistently across the stack
