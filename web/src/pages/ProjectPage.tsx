@@ -24,7 +24,7 @@ export const ProjectPage = () => {
   const activeId = projectId || chatId;
 
   // Use the project hook to get project data
-  const { project, isLoading: isLoadingProject, refetch } = useProject(projectId || null);
+  const { project, isLoading: isLoadingProject } = useProject(projectId || null);
 
   const state = location.state as LocationState;
 
@@ -83,7 +83,7 @@ export const ProjectPage = () => {
             </div>
           ) : (
             <ResizablePanelGroup direction="horizontal" className="h-full w-full">
-              <ResizablePanel defaultSize={30} minSize={30} maxSize={60}>
+              <ResizablePanel defaultSize={40} minSize={30} maxSize={60}>
                 <ChatPanel 
                   chatId={chatId}
                   projectId={projectId || null}
@@ -93,7 +93,7 @@ export const ProjectPage = () => {
               
               <ResizableHandle className="bg-border hover:bg-primary/20 transition-colors duration-200 w-1" />
               
-              <ResizablePanel defaultSize={70} minSize={40} maxSize={100}>
+              <ResizablePanel defaultSize={60} minSize={40} maxSize={100}>
                 <PreviewPanel mode={mode} onModeChange={setMode} projectId={projectId || null} />
               </ResizablePanel>
             </ResizablePanelGroup>

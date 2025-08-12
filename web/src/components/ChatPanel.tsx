@@ -13,6 +13,7 @@ import { chatApi, modelsApi } from '@/services/api';
 import ModelSelector from '@/components/ModelSelector';
 import TokenUsageDisplay from '@/components/TokenUsageDisplay';
 import { Textarea } from './ui/textarea';
+import { useSidebar } from './ui/sidebar';
 
 interface Message {
   id: string;
@@ -53,6 +54,8 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const { setOpen } = useSidebar();
+
   // Project-related state
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
 
@@ -68,7 +71,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
   // Initialize WebSocket connection only when we have a project
   useEffect(() => {
     fetchProviderInfo();
-
+    setOpen(false);
     return () => {
       if (wsRef.current) {
         wsRef.current.close(1000, 'Component unmounting');
@@ -110,7 +113,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
   }, [setMessages]);
   console.log('Current Project ID:', messages);
 
-  const fetchProviderInfo = async () => { 
+  const fetchProviderInfo = async () => {
     try {
       const data = await modelsApi.getProviderInfo();
       setCurrentProvider(data.provider || 'unknown');
@@ -215,7 +218,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         setIsConnected(false);
-        
+
         // Check if this is a connection refused error (API server down)
         if (ws.readyState === WebSocket.CONNECTING) {
           addStatusMessage('Unable to connect to project. Please check if the backend is running.', 'error');
@@ -524,7 +527,7 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
               <div
                 key={message.id}
                 className={cn(
-                  "flex gap-3 max-w-full",
+                  "flex gap-3 w-full",
                   message.sender === 'user' ? "justify-end" : "justify-start"
                 )}
               >
@@ -544,29 +547,29 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
                 <div
                   className={cn(
-                    "rounded-lg px-4 py-2 max-w-[80%] break-words",
+                    "rounded-lg px-4 py-2 min-w-0 flex-1 sm:flex-none sm:max-w-[80%] md:max-w-[70%] lg:max-w-[60%] xl:max-w-[50%] break-words hyphens-auto",
                     message.sender === 'user'
-                      ? "bg-primary text-primary-foreground ml-auto"
+                      ? "bg-primary text-primary-foreground"
                       : message.type === 'status'
                         ? "bg-muted border border-border"
                         : "bg-muted"
                   )}
                 >
                   {message.agent_type && message.sender === 'assistant' && message.type !== 'status' && (
-                    <div className="text-xs text-muted-foreground mb-1 font-medium">
+                    <div className="text-xs break-words text-muted-foreground mb-1 font-medium">
                       {message.agent_type.charAt(0).toUpperCase() + message.agent_type.slice(1)} Agent
                     </div>
                   )}
 
                   <div className={cn(
-                    "text-sm leading-relaxed",
+                    "text-sm leading-relaxed break-words overflow-wrap-anywhere",
                     message.type === 'status' && "text-muted-foreground text-xs"
                   )}>
                     {message.content}
                   </div>
 
                   <div className={cn(
-                    "text-xs mt-1 opacity-70",
+                    "text-xs mt-1 opacity-70 break-words",
                     message.sender === 'user' ? "text-primary-foreground/70" : "text-muted-foreground"
                   )}>
                     {message.timestamp.toLocaleTimeString()}
@@ -585,13 +588,13 @@ export const ChatPanel = ({ chatId, projectId, initialMessage }: ChatPanelProps)
 
             {/* Typing indicator */}
             {isTyping && (
-              <div className="flex gap-3 justify-start">
+              <div className="flex gap-3 justify-start w-full">
                 <Avatar className="h-8 w-8 shrink-0 ring-2 ring-primary/10">
                   <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                     <Activity className="w-4 h-4 animate-pulse" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="bg-muted rounded-lg px-4 py-2 max-w-[80%]">
+                <div className="bg-muted rounded-lg px-4 py-2 min-w-0 flex-1 sm:flex-none sm:max-w-[80%] md:max-w-[70%] lg:max-w-[60%] xl:max-w-[50%]">
                   <div className="flex space-x-1">
                     <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                     <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>

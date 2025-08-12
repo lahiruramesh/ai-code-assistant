@@ -181,7 +181,7 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ mode, onModeChange, project
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'running':
+      case 'created':
         return 'bg-green-500';
       case 'building':
         return 'bg-yellow-500';
@@ -256,6 +256,14 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ mode, onModeChange, project
               <RefreshCw className={cn("w-3 h-3 mr-1", projectLoading && "animate-spin")} />
               Refresh
             </Button>
+            <a href={`http://localhost:${activeProject.port}`} target='_blank'>
+              <Button
+                variant="outline"
+                size="sm"
+              >
+                View
+              </Button>
+            </a>
           </div>
         </div>
 

@@ -6,7 +6,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/components/AuthProvider';
-import { Login } from '@/components/Login';
 import { useChatSession } from '@/hooks/useChatSession';
 import { 
   Sparkles, 
@@ -75,7 +74,7 @@ const suggestions: Suggestion[] = [
     description: 'Professional portfolio with projects showcase',
     icon: <Sparkles className="h-5 w-5" />,
     category: 'Portfolio',
-    prompt: 'Build a professional portfolio website with projects showcase, about section, contact form, and smooth animations.'
+    prompt: 'Build a professional portfolio website with projects showcase, about section, contact form, and smooth animations. install all the required dependencies'
   }
 ];
 
